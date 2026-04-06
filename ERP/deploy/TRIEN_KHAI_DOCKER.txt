@@ -603,6 +603,12 @@ PHẦN 12 — XỬ LÝ SỰ CỐ
   │ SỰ CỐ                         │ CÁCH XỬ LÝ                          │
   ├────────────────────────────────────────────────────────────────────────┤
   │                                                                        │
+  │ Lỗi "mkdir db.sqlite3:   │ File sqlite3 không tồn tại trên prod,    │
+  │   permission denied"      │ Docker tạo nhầm thành thư mục.           │
+  │                            │ Đã sửa trong docker-compose.yml:         │
+  │                            │   Xóa dòng mount db.sqlite3.bak          │
+  │                            │   (prod dùng PostgreSQL, không cần sqlite)│
+  │                                                                        │
   │ docker compose up bị lỗi      │ Xem log chi tiết:                    │
   │                                │   docker compose logs --tail 30      │
   │                                │   docker compose logs backend        │
