@@ -135,8 +135,8 @@ PHẦN 2 — CHUẨN BỊ CODE (GIT) + FILE .ENV
   ── 2.2 (Máy PROD) Clone code từ Git ──
 
   Mở Ubuntu terminal:
-    sudo mkdir -p /opt/erp
-    sudo chown $(whoami):$(whoami) /opt/erp
+    sudo mkdir -p /opt/erp HOẶC (sudo mkdir -p /mnt/f/erp (TA0 FILE Ở Ổ F))
+    sudo chown $(whoami):$(whoami) /opt/erp | (sudo chown $(whoami):$(whoami) /mnt/f/erp)
 
     # --- Nếu dùng GitHub (SSH khuyến nghị) ---
     ssh-keygen -t ed25519 -C "erp-server"
@@ -144,17 +144,20 @@ PHẦN 2 — CHUẨN BỊ CODE (GIT) + FILE .ENV
     → Copy public key → GitHub → Settings → SSH Keys → Add
 
     git clone git@github.com:YOUR_ORG/erp-system.git /opt/erp
+    (git clone https://github.com/echngoi/ERP_HRM.git /mnt/f/erp)
 
     # --- Hoặc dùng HTTPS + token ---
     git clone https://github.com/YOUR_ORG/erp-system.git /opt/erp
 
     # Kiểm tra
     ls /opt/erp/
+    (ls /mnt/f/erp/)
     → backend/  frontend/  deploy/  docker-compose.yml  .gitignore
 
   ── 2.3 (Máy PROD) Tạo file .env ──
 
     cd /opt/erp
+    (cd /mnt/f/erp) --> chuyển sang ổ F
     cp deploy/.env.docker.example .env
     nano .env
 
