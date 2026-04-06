@@ -1,0 +1,890 @@
+================================================================================
+  HƯỚNG DẪN TRIỂN KHAI ERP TRÊN WSL 2 (Ubuntu trên Windows)
+  Local Server + Cloudflare Tunnel — Phương án 3
+  Ngày tạo: 2026-04-06
+================================================================================
+
+  WSL 2 = Windows Subsystem for Linux 2
+  → Chạy Ubuntu thật ngay trong Windows, không cần máy ảo riêng biệt
+  → Nhẹ, nhanh, dễ dùng hơn VMware/VirtualBox rất nhiều
+
+  ┌────────────────────────────────────────────────────────────────────────────┐
+  │  KIẾN TRÚC                                                                 │
+  │                                                                            │
+  │  PC Windows (máy chủ văn phòng)                                           │
+  │    └── WSL 2 (Ubuntu 24.04)                                               │
+  │          ├── Daphne :8000  (Django ASGI)                                  │
+  │          ├── Nginx :80     (Reverse proxy + frontend)                     │
+  │          └── Cloudflare Tunnel → erp.congty.com (HTTPS)                  │
+  │                                                                            │
+  │  Windows (host)                                                            │
+  │    └── Port Forward script: Windows:80 → WSL:80                          │
+  │    └── Task Scheduler: tự khởi động WSL khi bật máy                      │
+  │                                                                            │
+  │  Máy chấm công ──LAN──→ 192.168.1.100:80 (Windows) → WSL Nginx :80      │
+  │  Nhân viên ──Internet──→ erp.congty.com → Cloudflare Tunnel → WSL        │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  !! CHÚ Ý QUAN TRỌNG VỀ WSL 2 NETWORK:
+     WSL 2 dùng mạng ảo riêng (IP động 172.x.x.x, thay đổi mỗi lần restart).
+     Máy khác trong LAN KHÔNG truy cập thẳng vào WSL được.
+     → Cần script "Port Forwarding" chạy trên Windows để dẫn traffic vào WSL.
+     → Tài liệu này đã xử lý đầy đủ vấn đề này.
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  MỤC LỤC                                                                    ║
+║                                                                              ║
+║  PHẦN 1  — CÀI WSL 2 + UBUNTU TRÊN WINDOWS                                ║
+║  PHẦN 2  — CẤU HÌNH WSL 2                                                  ║
+║  PHẦN 3  — CÀI PHẦN MỀM TRONG UBUNTU                                       ║
+║  PHẦN 4  — COPY CODE VÀO WSL                                               ║
+║  PHẦN 5  — CÀI ĐẶT BACKEND                                                 ║
+║  PHẦN 6  — BUILD FRONTEND                                                   ║
+║  PHẦN 7  — CẤU HÌNH NGINX                                                  ║
+║  PHẦN 8  — CẤU HÌNH SYSTEMD SERVICES (TỰ KHỞI ĐỘNG)                      ║
+║  PHẦN 9  — PORT FORWARDING WINDOWS → WSL (QUAN TRỌNG)                     ║
+║  PHẦN 10 — CÀI CLOUDFLARE TUNNEL                                           ║
+║  PHẦN 11 — CẤU HÌNH MÁY CHẤM CÔNG                                         ║
+║  PHẦN 12 — KIỂM TRA TOÀN BỘ                                               ║
+║  PHẦN 13 — CẬP NHẬT CODE SAU NÀY                                           ║
+║  PHẦN 14 — BACKUP                                                           ║
+║  PHẦN 15 — XỬ LÝ SỰ CỐ                                                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+
+================================================================================
+PHẦN 1 — CÀI WSL 2 + UBUNTU TRÊN WINDOWS
+================================================================================
+
+  Yêu cầu: Windows 10 version 2004+ hoặc Windows 11
+
+  ── 1.1 Bật WSL 2 ──
+
+  Mở PowerShell với quyền Admin (Click phải → Run as administrator):
+
+    wsl --install
+
+  → Lệnh này tự động:
+      - Bật tính năng WSL và Virtual Machine Platform
+      - Tải Ubuntu 24.04 từ Microsoft Store
+      - Cài đặt WSL 2 làm mặc định
+
+  → Khi xong: RESTART MÁY
+
+  ── 1.2 Sau khi restart ──
+
+  Ubuntu tự mở → Đặt username và password Linux:
+    Enter new UNIX username: erpadmin        ← Tên tùy ý (viết thường, không dấu)
+    New password: xxxxxx                     ← Mật khẩu sudo, nhớ lại
+    Retype new password: xxxxxx
+
+  → Dấu nhắc lệnh: erpadmin@TENPC:~$
+  → Ubuntu đã sẵn sàng!
+
+  ── 1.3 Kiểm tra phiên bản WSL ──
+
+  Mở PowerShell (không cần Admin):
+    wsl --list --verbose
+
+    → Phải thấy:
+      NAME            STATE    VERSION
+      Ubuntu-24.04    Running  2        ← Cột VERSION = 2 là đúng
+
+  Nếu VERSION = 1, nâng lên WSL 2:
+    wsl --set-version Ubuntu-24.04 2
+
+  ── 1.4 Mở Ubuntu ──
+
+  Sau này mở Ubuntu theo 2 cách:
+    Cách 1: Tìm "Ubuntu" trong Start Menu
+    Cách 2: Mở Terminal Windows → Chọn Ubuntu trong dropdown
+    Cách 3: Gõ "wsl" trong PowerShell
+
+
+================================================================================
+PHẦN 2 — CẤU HÌNH WSL 2
+================================================================================
+
+  ── 2.1 Bật Systemd (BẮT BUỘC) ──
+
+  Systemd cho phép dùng systemctl để quản lý service — cần thiết để
+  Daphne và Nginx tự khởi động.
+
+  Trong cửa sổ Ubuntu:
+    sudo nano /etc/wsl.conf
+
+  Dán nội dung sau:
+    [boot]
+    systemd=true
+
+    [automount]
+    options = "metadata"
+
+  Lưu: Ctrl+O → Enter → Ctrl+X
+
+  Sau đó restart WSL từ PowerShell (Admin):
+    wsl --shutdown
+    wsl
+
+  Kiểm tra systemd đã chạy:
+    systemctl --no-pager status
+    → Phải thấy: System Status: running
+    → KHÔNG thấy lỗi "Failed to connect to bus"
+
+  ── 2.2 Cấu hình tài nguyên WSL (tùy chọn) ──
+
+  Nếu máy ít RAM, giới hạn để Windows không bị chậm:
+
+  Tạo file C:\Users\<user>\.wslconfig (trên Windows, không phải Ubuntu)
+  Mở Notepad → lưu vào: C:\Users\TenWindowsCuaBan\.wslconfig
+
+    [wsl2]
+    memory=3GB        # Tối đa 3GB RAM cho WSL (tùy chỉnh)
+    processors=2      # Tối đa 2 CPU core
+    swap=1GB
+
+  Sau đó: wsl --shutdown && wsl
+
+
+================================================================================
+PHẦN 3 — CÀI PHẦN MỀM TRONG UBUNTU
+================================================================================
+
+  Tất cả lệnh sau chạy trong cửa sổ Ubuntu.
+
+  # Cập nhật hệ thống
+  sudo apt update && sudo apt upgrade -y
+
+  # Cài Python + pip + venv
+  sudo apt install -y python3 python3-pip python3-venv python3-dev
+
+  # Cài Node.js 20
+  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  sudo apt install -y nodejs
+
+  # Cài Nginx
+  sudo apt install -y nginx
+
+  # Cài Git
+  sudo apt install -y git
+
+  # Cài tiện ích
+  sudo apt install -y curl wget unzip
+
+  # Kiểm tra
+  python3 --version    # Python 3.12.x
+  node --version       # v20.x.x
+  nginx -v             # nginx/1.x.x
+  git --version        # git version 2.x.x
+
+
+================================================================================
+PHẦN 4 — COPY CODE VÀO WSL
+================================================================================
+
+  !! QUAN TRỌNG: Đặt code trong filesystem của Ubuntu (/opt/erp/)
+     KHÔNG để code trong /mnt/c/ (ổ C Windows mount vào WSL) vì sẽ rất chậm.
+
+  ── Cách 1: Copy từ ổ Windows vào Ubuntu (đơn giản nhất) ──
+
+  Code đang ở: D:\myproject\ERP (COPY)\
+  Trong Windows, ổ D mount vào WSL tại: /mnt/d/
+
+  Trong Ubuntu:
+    # Tạo thư mục đích
+    sudo mkdir -p /opt/erp
+    sudo chown erpadmin:erpadmin /opt/erp
+
+    # Copy từ Windows vào Ubuntu filesystem
+    cp -r "/mnt/d/myproject/ERP (COPY)/ERP (COPY)/." /opt/erp/
+
+    # Kiểm tra
+    ls /opt/erp/
+    → Phải thấy: backend/  frontend/  deploy/
+
+  ── Cách 2: Dùng Git (nếu đã push lên GitHub) ──
+
+    sudo mkdir -p /opt/erp
+    sudo chown erpadmin:erpadmin /opt/erp
+    cd /opt
+    git clone https://github.com/your-org/erp.git erp
+
+  ── Lưu ý về đường dẫn ──
+
+  Từ Windows Explorer, có thể truy cập file trong Ubuntu qua:
+    \\wsl$\Ubuntu-24.04\opt\erp\
+  (Gõ đường dẫn này vào thanh địa chỉ Explorer)
+
+
+================================================================================
+PHẦN 5 — CÀI ĐẶT BACKEND
+================================================================================
+
+  cd /opt/erp/backend
+
+  # Tạo virtual environment
+  python3 -m venv venv
+
+  # Kích hoạt
+  source venv/bin/activate
+  → Dấu nhắc: (venv) erpadmin@TENPC:/opt/erp/backend$
+
+  # Cài dependencies
+  pip install -r requirements.txt
+
+  # Tạo file .env production
+  nano .env
+
+  ── Nội dung .env (sửa theo thực tế) ──
+  DEBUG=False
+  SECRET_KEY=<KEY_NGAU_NHIEN>
+  ALLOWED_HOSTS=erp.congty.com,192.168.1.100,localhost,127.0.0.1
+  CORS_ALLOWED_ORIGINS=https://erp.congty.com,http://192.168.1.100
+
+  ZK_DEVICE_IP=192.168.1.225
+  ZK_DEVICE_PORT=5005
+  ZK_DEVICE_TIMEOUT=10
+  ZK_DEVICE_PASSWORD=0
+  ZK_PROTOCOL=adms
+  ── Kết thúc .env ──
+
+  # Tạo SECRET_KEY ngẫu nhiên
+  python3 -c "import secrets; print(secrets.token_urlsafe(50))"
+  → Copy kết quả → dán vào SECRET_KEY= trong .env
+
+  # Lưu (Ctrl+O → Enter → Ctrl+X)
+
+  # Chạy migration
+  python manage.py migrate
+
+  # Thu thập static files
+  python manage.py collectstatic --noinput
+
+  # Tạo superuser
+  python manage.py createsuperuser
+
+  # Kiểm tra Daphne chạy thủ công
+  venv/bin/daphne -b 127.0.0.1 -p 8000 config.asgi:application
+  → Mở trình duyệt Windows: http://localhost:8000/admin/
+  → Nếu thấy trang Django Admin = OK
+  → Ctrl+C để dừng
+
+
+================================================================================
+PHẦN 6 — BUILD FRONTEND
+================================================================================
+
+  cd /opt/erp/frontend
+
+  # Cài packages
+  npm install
+
+  # Tạo .env production (API URL dạng relative — Nginx proxy)
+  echo "VITE_API_BASE_URL=/api" > .env.production
+
+  # Build
+  npm run build
+  → Kết quả: /opt/erp/frontend/dist/
+
+
+================================================================================
+PHẦN 7 — CẤU HÌNH NGINX
+================================================================================
+
+  # Copy file config có sẵn
+  sudo cp /opt/erp/deploy/nginx-erp.conf /etc/nginx/sites-available/erp
+
+  # Sửa đường dẫn cho đúng với Ubuntu (thay C:/ bằng /opt/erp/)
+  sudo nano /etc/nginx/sites-available/erp
+
+  Tìm và sửa:
+    root /opt/erp/frontend/dist;               ← Đường dẫn frontend dist
+    server_name erp.congty.com 192.168.1.100; ← Domain + IP máy chủ thật
+    alias /opt/erp/backend/staticfiles/;       ← Static files
+    alias /opt/erp/backend/media/;             ← Media files
+
+  File nginx hoàn chỉnh tham khảo (sudo nano /etc/nginx/sites-available/erp):
+
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │  server {                                                                │
+  │      listen 80;                                                          │
+  │      server_name erp.congty.com 192.168.1.100 localhost;               │
+  │                                                                          │
+  │      root /opt/erp/frontend/dist;                                        │
+  │      index index.html;                                                   │
+  │                                                                          │
+  │      location / {                                                        │
+  │          try_files $uri $uri/ /index.html;                               │
+  │      }                                                                   │
+  │      location /api/ {                                                    │
+  │          proxy_pass http://127.0.0.1:8000;                              │
+  │          proxy_set_header Host              $host;                       │
+  │          proxy_set_header X-Real-IP         $remote_addr;               │
+  │          proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for; │
+  │          proxy_set_header X-Forwarded-Proto $scheme;                    │
+  │          proxy_read_timeout 120s;                                        │
+  │      }                                                                   │
+  │      location /admin/ {                                                  │
+  │          proxy_pass http://127.0.0.1:8000;                              │
+  │          proxy_set_header Host              $host;                       │
+  │          proxy_set_header X-Real-IP         $remote_addr;               │
+  │          proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for; │
+  │          proxy_set_header X-Forwarded-Proto $scheme;                    │
+  │      }                                                                   │
+  │      location /ws/ {                                                     │
+  │          proxy_pass http://127.0.0.1:8000;                              │
+  │          proxy_http_version 1.1;                                         │
+  │          proxy_set_header Upgrade    $http_upgrade;                      │
+  │          proxy_set_header Connection "upgrade";                          │
+  │          proxy_set_header Host       $host;                              │
+  │          proxy_read_timeout 86400s;                                      │
+  │      }                                                                   │
+  │      location /pub/ {                                                    │
+  │          proxy_pass http://127.0.0.1:8000;                              │
+  │          proxy_http_version 1.1;                                         │
+  │          proxy_set_header Upgrade    $http_upgrade;                      │
+  │          proxy_set_header Connection "upgrade";                          │
+  │          proxy_set_header Host       $host;                              │
+  │          proxy_read_timeout 86400s;                                      │
+  │      }                                                                   │
+  │      location /iclock/ {                                                 │
+  │          proxy_pass http://127.0.0.1:8000;                              │
+  │          proxy_set_header Host      $host;                               │
+  │          proxy_set_header X-Real-IP $remote_addr;                        │
+  │      }                                                                   │
+  │      location /cdata {                                                   │
+  │          proxy_pass http://127.0.0.1:8000;                              │
+  │          proxy_set_header Host      $host;                               │
+  │          proxy_set_header X-Real-IP $remote_addr;                        │
+  │      }                                                                   │
+  │      location /static/ {                                                 │
+  │          alias /opt/erp/backend/staticfiles/;                           │
+  │          expires 30d;                                                    │
+  │      }                                                                   │
+  │      location /media/ {                                                  │
+  │          alias /opt/erp/backend/media/;                                 │
+  │          expires 7d;                                                     │
+  │      }                                                                   │
+  │      client_max_body_size 20M;                                           │
+  │  }                                                                       │
+  └──────────────────────────────────────────────────────────────────────────┘
+
+  # Kích hoạt site
+  sudo ln -s /etc/nginx/sites-available/erp /etc/nginx/sites-enabled/
+  sudo rm -f /etc/nginx/sites-enabled/default
+
+  # Kiểm tra config
+  sudo nginx -t
+  → syntax is ok, test is successful
+
+  # Khởi động Nginx
+  sudo systemctl start nginx
+  sudo systemctl enable nginx
+
+  # Kiểm tra
+  curl http://localhost
+  → Phải trả về nội dung HTML của trang login
+
+
+================================================================================
+PHẦN 8 — CẤU HÌNH SYSTEMD SERVICES (TỰ KHỞI ĐỘNG)
+================================================================================
+
+  ── 8.1 Tạo Daphne service ──
+
+  sudo nano /etc/systemd/system/erp-backend.service
+
+  ── Nội dung ──
+  [Unit]
+  Description=ERP Backend (Daphne ASGI)
+  After=network.target
+
+  [Service]
+  Type=simple
+  User=erpadmin
+  Group=erpadmin
+  WorkingDirectory=/opt/erp/backend
+  Environment="PATH=/opt/erp/backend/venv/bin:/usr/bin:/bin"
+  EnvironmentFile=/opt/erp/backend/.env
+  ExecStart=/opt/erp/backend/venv/bin/daphne \
+      -b 127.0.0.1 \
+      -p 8000 \
+      --proxy-headers \
+      config.asgi:application
+  Restart=always
+  RestartSec=5
+  StandardOutput=journal
+  StandardError=journal
+
+  [Install]
+  WantedBy=multi-user.target
+  ── Kết thúc ──
+
+  # Kích hoạt và khởi động
+  sudo systemctl daemon-reload
+  sudo systemctl enable erp-backend
+  sudo systemctl start erp-backend
+
+  # Kiểm tra
+  sudo systemctl status erp-backend
+  → Active: active (running)
+
+  # Xem log realtime
+  sudo journalctl -u erp-backend -f
+
+  ── 8.2 Kiểm tra cả 2 service ──
+
+  sudo systemctl status nginx
+  sudo systemctl status erp-backend
+  → Cả 2 phải: Active: active (running)
+
+  # Test từ Ubuntu
+  curl http://localhost/api/attendance/device/status/
+  → Phải trả JSON
+
+
+================================================================================
+PHẦN 9 — PORT FORWARDING WINDOWS → WSL (QUAN TRỌNG NHẤT)
+================================================================================
+
+  !! ĐÂY LÀ PHẦN ĐẶC THÙ CỦA WSL 2, CẦN LÀM ĐÚNG !!
+
+  Vấn đề:
+    - Nginx trong WSL lắng nghe port 80
+    - WSL có IP riêng (172.x.x.x), thay đổi mỗi lần khởi động
+    - Máy LAN (kể cả máy chấm công) chỉ thấy IP Windows (192.168.1.100)
+    - Cần "dẫn đường" traffic từ Windows:80 → WSL:80
+
+  Giải pháp:
+    Script PowerShell tự động lấy IP WSL hiện tại và cấu hình
+    Windows Port Proxy + Firewall. Chạy tự động khi bật máy.
+
+  ── 9.1 Tạo script port forwarding ──
+
+  Tạo file: C:\erp-portforward.ps1
+  (Mở Notepad → Lưu tại C:\ với tên erp-portforward.ps1)
+
+  ── Nội dung file C:\erp-portforward.ps1 ──
+  # ERP WSL2 Port Forwarding Script
+  # Chạy khi khởi động Windows để dẫn traffic vào WSL
+
+  # Lấy IP hiện tại của WSL
+  $wslIp = (wsl hostname -I).Trim().Split()[0]
+  Write-Host "WSL IP: $wslIp"
+
+  # Xóa rule cũ (nếu có)
+  netsh interface portproxy delete v4tov4 listenport=80   listenaddress=0.0.0.0 2>$null
+  netsh interface portproxy delete v4tov4 listenport=8000 listenaddress=0.0.0.0 2>$null
+
+  # Tạo port forward mới
+  netsh interface portproxy add v4tov4 `
+      listenport=80 listenaddress=0.0.0.0 `
+      connectport=80 connectaddress=$wslIp
+
+  # Mở Firewall Windows cho port 80
+  netsh advfirewall firewall delete rule name="WSL ERP Port 80"  2>$null
+  netsh advfirewall firewall add rule `
+      name="WSL ERP Port 80" `
+      dir=in action=allow `
+      protocol=TCP localport=80
+
+  Write-Host "Port forwarding OK: 0.0.0.0:80 -> ${wslIp}:80"
+
+  # Bắt đầu WSL nếu chưa chạy
+  wsl -e bash -c "sudo systemctl start nginx erp-backend 2>/dev/null; true"
+  Write-Host "WSL services started."
+  ── Kết thúc file ──
+
+  ── 9.2 Chạy thử script ──
+
+  Mở PowerShell (Admin):
+    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser  ← Cho phép chạy script
+    C:\erp-portforward.ps1
+
+  → Phải thấy:
+    WSL IP: 172.x.x.x
+    Port forwarding OK: 0.0.0.0:80 -> 172.x.x.x:80
+    WSL services started.
+
+  Kiểm tra kết quả:
+    netsh interface portproxy show v4tov4
+    → Phải thấy dòng: 0.0.0.0   80   172.x.x.x   80
+
+  Thử từ máy khác trong LAN:
+    Mở trình duyệt → http://192.168.1.100
+    → Phải thấy trang login ERP!
+
+  ── 9.3 Đặt lịch tự chạy khi khởi động Windows ──
+
+  Mở Task Scheduler (Tìm trong Start Menu: "Task Scheduler")
+
+    → Create Task (không phải Basic Task)
+
+    Tab [General]:
+      Name        : ERP WSL Port Forward
+      Description : Khởi động WSL và cấu hình port forwarding cho ERP
+      Tick: Run whether user is logged on or not
+      Tick: Run with highest privileges
+      Configure for: Windows 10 (hoặc version đang dùng)
+
+    Tab [Triggers]:
+      New → Begin the task: At startup
+      Delay task for: 30 seconds   ← Đợi WSL khởi động xong
+      → OK
+
+    Tab [Actions]:
+      New →
+        Action: Start a program
+        Program: powershell.exe
+        Arguments: -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\erp-portforward.ps1"
+      → OK
+
+    Tab [Conditions]:
+      Bỏ tick: "Start the task only if the computer is on AC power"
+
+    Tab [Settings]:
+      Tick: Run task as soon as possible after a scheduled start is missed
+      If the task is already running: Do not start a new instance
+
+    → OK → Nhập mật khẩu Windows nếu được hỏi
+
+  Kiểm tra đã tạo đúng:
+    Trong Task Scheduler → Task Scheduler Library
+    → Phải thấy "ERP WSL Port Forward"
+    → Click phải → Run (chạy thử ngay)
+    → Kiểm tra lại http://192.168.1.100
+
+
+================================================================================
+PHẦN 10 — CÀI CLOUDFLARE TUNNEL
+================================================================================
+
+  Cloudflare Tunnel chạy bên trong WSL — không cần port forwarding thêm
+  vì tunnel tạo kết nối ra ngoài, không nhận kết nối vào.
+
+  Mở Ubuntu:
+
+  ── 10.1 Cài cloudflared ──
+
+  curl -L \
+    https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb \
+    -o /tmp/cloudflared.deb
+  sudo dpkg -i /tmp/cloudflared.deb
+
+  cloudflared --version
+  → cloudflared version xxxx
+
+  ── 10.2 Đăng nhập Cloudflare ──
+
+  cloudflared tunnel login
+
+  → In ra URL dạng:
+    https://dash.cloudflare.com/argotunnel?callback=...
+  → Copy URL → Dán vào trình duyệt Windows → Đăng nhập → Chọn domain
+  → Quay lại Ubuntu → Thấy: "You have successfully logged in."
+
+  ── 10.3 Tạo tunnel ──
+
+  cloudflared tunnel create erp-tunnel
+  → Created tunnel erp-tunnel with id xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  → Ghi nhớ TUNNEL_ID này
+
+  ── 10.4 Tạo file cấu hình ──
+
+  mkdir -p ~/.cloudflared
+  nano ~/.cloudflared/config.yml
+
+  ── Nội dung (thay TUNNEL_ID và domain) ──
+  tunnel: <TUNNEL_ID>
+  credentials-file: /home/erpadmin/.cloudflared/<TUNNEL_ID>.json
+
+  ingress:
+    - hostname: erp.congty.com
+      service: http://localhost:80
+      originRequest:
+        httpHostHeader: erp.congty.com
+    - service: http_status:404
+  ── Kết thúc ──
+
+  !! Thay:
+     <TUNNEL_ID>    = ID vừa tạo ở bước 10.3
+     erpadmin       = username Ubuntu của bạn
+     erp.congty.com = domain thật
+
+  ── 10.5 Tạo DNS record trên Cloudflare ──
+
+  cloudflared tunnel route dns erp-tunnel erp.congty.com
+  → Route for erp.congty.com created successfully
+
+  ── 10.6 Chạy thử tunnel ──
+
+  cloudflared tunnel run erp-tunnel
+  → INF Registered tunnel connection  connIndex=0
+
+  Mở trình duyệt (dùng 4G điện thoại, không phải WiFi công ty):
+    https://erp.congty.com
+    → Phải thấy trang login ERP!
+
+  Ctrl+C để dừng
+
+  ── 10.7 Cài tunnel như systemd service ──
+
+  sudo cloudflared service install
+  sudo systemctl enable cloudflared
+  sudo systemctl start cloudflared
+
+  # Kiểm tra
+  sudo systemctl status cloudflared
+  → Active: active (running)
+
+
+================================================================================
+PHẦN 11 — CẤU HÌNH MÁY CHẤM CÔNG
+================================================================================
+
+  Trên máy chấm công Ronald Jack AI06F:
+    Menu → Comm. → Cloud Server Setting
+
+    ┌───────────────────────────────────────────────────┐
+    │  Domain  : 192.168.1.100  ← IP Windows (không     │
+    │                             phải IP WSL)           │
+    │  Port    : 80                                      │
+    │  HTTPS   : OFF                                     │
+    │  Enable  : ON                                      │
+    └───────────────────────────────────────────────────┘
+
+  Luồng dữ liệu:
+    Máy chấm công → 192.168.1.100:80 (Windows)
+    → Port Forward (erp-portforward.ps1)
+    → 172.x.x.x:80 (WSL Nginx)
+    → 127.0.0.1:8000 (Daphne/Django)
+    → Lưu vào SQLite
+
+  Kiểm tra trong Ubuntu:
+    sudo journalctl -u erp-backend -f | grep iclock
+    → Phải thấy: [iclock] Handshake từ SN=xxxxx
+
+
+================================================================================
+PHẦN 12 — KIỂM TRA TOÀN BỘ
+================================================================================
+
+  ☐ 1. Services trong WSL chạy?
+       (Trong Ubuntu)
+       sudo systemctl status nginx erp-backend cloudflared
+       → 3 service đều Active: running
+
+  ☐ 2. Port forwarding đã có?
+       (Trong PowerShell)
+       netsh interface portproxy show v4tov4
+       → Thấy: 0.0.0.0:80 → 172.x.x.x:80
+
+  ☐ 3. Truy cập từ chính máy chủ?
+       Mở trình duyệt: http://localhost
+       → Hiện trang login
+
+  ☐ 4. Truy cập từ máy LAN khác?
+       Mở trình duyệt máy LAN: http://192.168.1.100
+       → Hiện trang login
+
+  ☐ 5. Truy cập từ xa (4G)?
+       https://erp.congty.com
+       → Hiện trang login (HTTPS)
+
+  ☐ 6. Đăng nhập?
+       Đăng nhập → Vào dashboard OK
+
+  ☐ 7. Máy chấm công kết nối?
+       sudo journalctl -u erp-backend -f | grep iclock
+       → Thấy Handshake
+
+  ☐ 8. Chấm công realtime?
+       Quẹt tay → Bản ghi xuất hiện ngay trên web
+
+  ☐ 9. Sau khi restart Windows, tự chạy lại?
+       Restart PC → Đợi 2 phút → http://192.168.1.100
+       → Tự lên không cần làm gì
+
+
+================================================================================
+PHẦN 13 — CẬP NHẬT CODE SAU NÀY
+================================================================================
+
+  ── Khi sửa code trên máy dev, muốn cập nhật lên máy chủ ──
+
+  Cách nhanh nhất: Dùng script deploy trong Ubuntu
+
+  Trong Ubuntu:
+    bash /opt/erp/deploy/deploy.sh
+
+  Script này sẽ tự:
+    - git pull code mới (nếu dùng Git)
+    - pip install (nếu thêm package)
+    - python manage.py migrate
+    - collectstatic
+    - npm run build (frontend)
+    - Restart erp-backend service
+
+  ── Hoặc copy thủ công từ máy dev sang WSL ──
+
+  Từ Windows Explorer, mở: \\wsl$\Ubuntu-24.04\opt\erp\
+  → Kéo thả file cần cập nhật vào đúng thư mục
+
+  Sau đó trong Ubuntu:
+    # Nếu sửa Python:
+    sudo systemctl restart erp-backend
+
+    # Nếu sửa React:
+    cd /opt/erp/frontend && npm run build
+    # (Không cần restart gì thêm)
+
+  ── Mở file để sửa trực tiếp từ VS Code trên Windows ──
+
+  VS Code hỗ trợ WSL rất tốt qua extension "WSL":
+    1. Cài extension "WSL" trong VS Code
+    2. Nhấn F1 → "WSL: Open Folder in WSL"
+    3. Chọn /opt/erp/
+    → Code chạy trong WSL, IntelliSense hoạt động bình thường
+    → Lưu file = lưu thẳng vào Ubuntu filesystem
+    → Nhanh như dev bình thường!
+
+
+================================================================================
+PHẦN 14 — BACKUP
+================================================================================
+
+  ── Backup tự động ──
+
+  Thêm vào crontab trong Ubuntu:
+    crontab -e
+    → Chọn editor: 1 (nano)
+
+  Thêm dòng cuối file:
+    # Backup database mỗi ngày lúc 2h sáng
+    0 2 * * * cp /opt/erp/backend/db.sqlite3 /opt/erp/backups/db_$(date +\%Y\%m\%d).sqlite3
+    # Xóa backup cũ hơn 30 ngày
+    5 2 * * * find /opt/erp/backups -name "db_*.sqlite3" -mtime +30 -delete
+
+  Tạo thư mục backups:
+    mkdir -p /opt/erp/backups
+
+  ── Backup sang Windows ──
+
+  File trong WSL có thể truy cập từ Windows tại:
+    \\wsl$\Ubuntu-24.04\opt\erp\backups\
+  → Copy sang ổ cứng ngoài hoặc cloud storage định kỳ
+
+
+================================================================================
+PHẦN 15 — XỬ LÝ SỰ CỐ
+================================================================================
+
+  ┌────────────────────────────────────────────────────────────────────────────┐
+  │ SỰ CỐ                          │ CÁCH XỬ LÝ                             │
+  ├────────────────────────────────────────────────────────────────────────────┤
+  │                                                                            │
+  │  http://192.168.1.100          │ Kiểm tra port forward còn không:        │
+  │  không truy cập được từ LAN    │   PowerShell (Admin):                    │
+  │                                │   netsh interface portproxy show v4tov4  │
+  │                                │   → Nếu trống: chạy lại script:         │
+  │                                │   C:\erp-portforward.ps1                 │
+  │                                │                                           │
+  │  Sau khi restart Windows,      │ Task Scheduler chưa chạy script:        │
+  │  LAN không vào được            │   Mở Task Scheduler → "ERP WSL Port     │
+  │                                │   Forward" → Click phải → Run           │
+  │                                │   → Điều chỉnh Delay lên 60 seconds     │
+  │                                │                                           │
+  │  WSL chạy nhưng service        │ Systemd chưa bật hoặc bị lỗi:          │
+  │  nginx/daphne không start      │   wsl -e bash -c "sudo systemctl start  │
+  │                                │     nginx erp-backend"                   │
+  │                                │   Kiểm tra: wsl -e systemctl status nginx│
+  │                                │                                           │
+  │  Lỗi 502 Bad Gateway           │ Daphne chưa chạy:                       │
+  │                                │   (Trong Ubuntu)                         │
+  │                                │   sudo systemctl restart erp-backend     │
+  │                                │   sudo journalctl -u erp-backend -n 50  │
+  │                                │                                           │
+  │  https://erp.congty.com        │ Cloudflare Tunnel dừng:                 │
+  │  không truy cập được           │   (Trong Ubuntu)                         │
+  │                                │   sudo systemctl restart cloudflared     │
+  │                                │   sudo journalctl -u cloudflared -n 30  │
+  │                                │                                           │
+  │  Máy chấm công không kết nối   │ 1. Kiểm tra port forward còn chạy?      │
+  │                                │   2. Ping máy chấm công từ WSL:         │
+  │                                │      ping 192.168.1.225                  │
+  │                                │   3. IP máy CC đặt = 192.168.1.100?     │
+  │                                │   4. Port = 80?                          │
+  │                                │                                           │
+  │  Sau update Windows,           │ WSL 2 vẫn hoạt động. Nếu bị lỗi:       │
+  │  WSL bị lỗi                    │   wsl --update                           │
+  │                                │   wsl --shutdown && wsl                  │
+  │                                │                                           │
+  │  WSL chiếm quá nhiều RAM       │ Thêm vào C:\Users\<user>\.wslconfig:    │
+  │                                │   [wsl2]                                  │
+  │                                │   memory=2GB                             │
+  │                                │   wsl --shutdown && wsl                  │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  ── Lệnh hay dùng ──
+
+  Trong PowerShell (Admin):
+    wsl                              # Mở Ubuntu
+    wsl --shutdown                   # Tắt WSL hoàn toàn
+    wsl --list --verbose             # Xem trạng thái
+    wsl --update                     # Cập nhật WSL kernel
+
+  Trong Ubuntu:
+    sudo systemctl restart erp-backend nginx cloudflared
+    sudo journalctl -u erp-backend -f        # Log realtime
+    sudo journalctl -u nginx -f
+    sudo journalctl -u cloudflared -f
+    curl http://localhost                     # Test Nginx
+    curl http://localhost:8000/admin/        # Test Daphne trực tiếp
+
+
+================================================================================
+  TỔNG HỢP THỨ TỰ THỰC HIỆN
+================================================================================
+
+  === TRÊN WINDOWS ===
+  ☐  1. Mở PowerShell Admin → wsl --install → Restart
+  ☐  2. Đặt username/password Ubuntu
+  ☐  3. Cấu hình /etc/wsl.conf (bật systemd) → wsl --shutdown → wsl
+  ☐  4. (Tùy chọn) Tạo .wslconfig giới hạn RAM
+
+  === TRONG UBUNTU ===
+  ☐  5. sudo apt update && apt upgrade
+  ☐  6. Cài Python, Node.js 20, Nginx, Git
+  ☐  7. Copy code: cp -r "/mnt/d/..." /opt/erp/
+  ☐  8. Backend: venv, pip install, tạo .env, migrate, collectstatic, createsuperuser
+  ☐  9. Frontend: npm install, tạo .env.production, npm run build
+  ☐ 10. Cấu hình Nginx config → nginx -t → enable → start
+  ☐ 11. Tạo erp-backend.service → enable → start
+  ☐ 12. Kiểm tra nội bộ: curl http://localhost → OK
+
+  === PORT FORWARDING (WINDOWS) ===
+  ☐ 13. Tạo C:\erp-portforward.ps1
+  ☐ 14. Set-ExecutionPolicy RemoteSigned
+  ☐ 15. Chạy script → Kiểm tra http://192.168.1.100 từ LAN → OK
+  ☐ 16. Tạo Task Scheduler tự chạy script khi boot
+
+  === CLOUDFLARE TUNNEL (UBUNTU) ===
+  ☐ 17. Mua domain, chuyển DNS về Cloudflare
+  ☐ 18. Cài cloudflared → tunnel login → tunnel create
+  ☐ 19. Tạo config.yml → route dns → chạy thử
+  ☐ 20. cloudflared service install → enable → start
+  ☐ 21. Kiểm tra: https://erp.congty.com từ 4G → OK
+
+  === MÁY CHẤM CÔNG ===
+  ☐ 22. Cloud Server: IP=192.168.1.100, Port=80 → Enable
+
+  === HOÀN TẤT ===
+  ☐ 23. Quẹt vân tay → Bản ghi lên web → OK
+  ☐ 24. Restart Windows → Đợi 2 phút → Tất cả tự lên → DONE!
+
+  Thời gian ước tính: 1.5 - 2.5 giờ
+
+================================================================================
+  END OF DOCUMENT
+================================================================================

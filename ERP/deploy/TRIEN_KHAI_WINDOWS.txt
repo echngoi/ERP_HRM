@@ -1,0 +1,970 @@
+================================================================================
+  HƯỚNG DẪN TRIỂN KHAI ERP TRÊN MÁY CHỦ WINDOWS
+  (Local Server + Cloudflare Tunnel — Phương án 3 — Dành cho Windows)
+  Ngày tạo: 2026-04-06
+================================================================================
+
+  Tài liệu này hướng dẫn cài đặt hệ thống ERP trên máy chủ chạy Windows
+  (Windows 10 / Windows 11 / Windows Server 2019-2022) theo đúng cách đang
+  chạy trên máy dev, chỉ khác là:
+    - Chạy với file .env production (DEBUG=False, SECRET_KEY thật)
+    - Daphne chạy như Windows Service (tự khởi động khi bật máy)
+    - Nginx cho Windows làm reverse proxy
+    - Cloudflare Tunnel để truy cập từ xa qua domain
+
+  ┌────────────────────────────────────────────────────────────────────────────┐
+  │  KIẾN TRÚC                                                                 │
+  │                                                                            │
+  │  Máy chấm công ──LAN──→  Máy chủ Windows (văn phòng)                     │
+  │                                    │                                       │
+  │                           Nginx :80 (reverse proxy)                       │
+  │                                    │                                       │
+  │                           Daphne :8000 (Django ASGI)                      │
+  │                                    │                                       │
+  │                           Cloudflare Tunnel                                │
+  │                                    │                                       │
+  │  Nhân viên ──Internet──→  erp.congty.com (HTTPS tự động)                 │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  MỤC LỤC                                                                    ║
+║                                                                              ║
+║  PHẦN 1 — CHUẨN BỊ MÁY CHỦ WINDOWS                                        ║
+║  PHẦN 2 — CÀI ĐẶT PHẦN MỀM CẦN THIẾT                                      ║
+║  PHẦN 3 — COPY CODE SANG MÁY CHỦ                                           ║
+║  PHẦN 4 — CÀI ĐẶT BACKEND (Django + Daphne)                                ║
+║  PHẦN 5 — BUILD FRONTEND (React + Vite)                                     ║
+║  PHẦN 6 — CÀI NGINX CHO WINDOWS                                            ║
+║  PHẦN 7 — CHẠY DAPHNE NHƯ WINDOWS SERVICE (NSSM)                          ║
+║  PHẦN 8 — CÀI CLOUDFLARE TUNNEL                                            ║
+║  PHẦN 9 — CẤU HÌNH MÁY CHẤM CÔNG                                           ║
+║  PHẦN 10 — KIỂM TRA TOÀN BỘ                                                ║
+║  PHẦN 11 — CẬP NHẬT CODE SAU NÀY                                           ║
+║  PHẦN 12 — BACKUP & BẢO TRÌ                                                ║
+║  PHẦN 13 — XỬ LÝ SỰ CỐ                                                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+
+================================================================================
+PHẦN 1 — CHUẨN BỊ MÁY CHỦ WINDOWS
+================================================================================
+
+  1.1  YÊU CẦU PHẦN CỨNG
+  ─────────────────────────
+    - CPU : Bất kỳ (Intel i3 / AMD Ryzen 3 trở lên)
+    - RAM : Tối thiểu 4 GB (khuyến nghị 8 GB)
+    - Ổ đĩa : Tối thiểu 40 GB trống (C:\)
+    - Mạng : Cắm dây LAN (không dùng WiFi)
+    - Phải BẬT 24/7 (hoặc ít nhất trong giờ làm việc)
+
+  1.2  ĐẶT IP TĨNH CHO MÁY CHỦ (BẮT BUỘC)
+  ──────────────────────────────────────────
+  Máy chủ PHẢI có IP cố định trong mạng LAN để máy chấm công luôn biết
+  địa chỉ cần kết nối.
+
+  Cách đặt IP tĩnh trên Windows:
+    1. Nhấn Windows + R → gõ: ncpa.cpl → Enter
+    2. Click phải card mạng LAN đang dùng → Properties
+    3. Chọn "Internet Protocol Version 4 (TCP/IPv4)" → Properties
+    4. Chọn "Use the following IP address":
+
+       IP address    : 192.168.1.100     ← Chọn IP chưa ai dùng trong LAN
+       Subnet mask   : 255.255.255.0
+       Default gateway: 192.168.1.1     ← IP router của bạn
+       DNS server    : 8.8.8.8
+
+    5. OK → OK → Close
+
+  Kiểm tra: Mở CMD → gõ: ipconfig
+  → Phải thấy IPv4 Address: 192.168.1.100
+
+  !! LƯU Ý: Ghi nhớ IP này, dùng xuyên suốt tài liệu (192.168.1.100)
+             Thay bằng IP thật của máy chủ nếu khác.
+
+  1.3  TẮT WINDOWS SLEEP / HIBERNATE
+  ────────────────────────────────────
+  Windows → Settings → System → Power & sleep
+    → Screen: Never
+    → Sleep: Never
+
+  1.4  (TÙY CHỌN) BẬT REMOTE DESKTOP
+  ─────────────────────────────────────
+  Để quản trị máy chủ từ xa trong cùng LAN:
+    Windows → Settings → System → Remote Desktop → Enable
+
+  Kết nối từ máy khác: mstsc → nhập 192.168.1.100
+
+
+================================================================================
+PHẦN 2 — CÀI ĐẶT PHẦN MỀM CẦN THIẾT
+================================================================================
+
+  Cài lần lượt theo thứ tự sau. Tất cả đều miễn phí.
+
+  ──────────────────────────────────────────────────────────────────────────
+  2.1  PYTHON 3.12+
+  ──────────────────────────────────────────────────────────────────────────
+  Tải tại: https://www.python.org/downloads/
+  Chọn phiên bản 3.12.x hoặc 3.13.x (bản Windows installer 64-bit)
+
+  Khi cài:
+    [✓] Add Python to PATH        ← PHẢI TICK Ô NÀY
+    [✓] Install pip
+    → Install Now
+
+  Kiểm tra sau khi cài (mở CMD mới):
+    python --version
+    → Python 3.12.x
+
+    pip --version
+    → pip 24.x
+
+  ──────────────────────────────────────────────────────────────────────────
+  2.2  NODE.JS 20+
+  ──────────────────────────────────────────────────────────────────────────
+  Tải tại: https://nodejs.org/en/download
+  Chọn: LTS version → Windows Installer (.msi) 64-bit
+
+  Cài theo mặc định (Next → Next → Install)
+
+  Kiểm tra (mở CMD mới):
+    node --version
+    → v20.x.x
+
+    npm --version
+    → 10.x.x
+
+  ──────────────────────────────────────────────────────────────────────────
+  2.3  GIT FOR WINDOWS
+  ──────────────────────────────────────────────────────────────────────────
+  Tải tại: https://git-scm.com/download/win
+  Cài theo mặc định. Khi hỏi về "default editor" → chọn Notepad hoặc VS Code
+
+  Kiểm tra:
+    git --version
+
+  ──────────────────────────────────────────────────────────────────────────
+  2.4  NGINX CHO WINDOWS
+  ──────────────────────────────────────────────────────────────────────────
+  Tải tại: https://nginx.org/en/download.html
+  Chọn: nginx/Windows-x.x.x (bản Stable release)
+  → Tải về file .zip
+
+  Giải nén vào: C:\nginx\
+  Kết quả: C:\nginx\nginx.exe tồn tại
+
+  ──────────────────────────────────────────────────────────────────────────
+  2.5  NSSM (Non-Sucking Service Manager)
+  Dùng để đăng ký Daphne và Nginx chạy như Windows Service
+  ──────────────────────────────────────────────────────────────────────────
+  Tải tại: https://nssm.cc/download
+  Chọn: nssm 2.24 (bản mới nhất)
+  → Tải về file .zip
+
+  Giải nén → vào thư mục win64\ → copy nssm.exe vào: C:\nssm\nssm.exe
+  (Tạo thư mục C:\nssm\ nếu chưa có)
+
+  ──────────────────────────────────────────────────────────────────────────
+  2.6  CLOUDFLARED (Cloudflare Tunnel)
+  ──────────────────────────────────────────────────────────────────────────
+  Tải tại: https://github.com/cloudflare/cloudflared/releases/latest
+  Tìm file: cloudflared-windows-amd64.exe
+  → Tải về → đổi tên thành: cloudflared.exe
+  → Copy vào: C:\cloudflared\cloudflared.exe
+  (Tạo thư mục C:\cloudflared\ nếu chưa có)
+
+  Thêm vào PATH (để dùng lệnh cloudflared từ bất kỳ đâu):
+    Windows → Search "environment variables"
+    → Environment Variables → System variables → Path → Edit → New
+    → Nhập: C:\cloudflared
+    → OK
+
+
+================================================================================
+PHẦN 3 — COPY CODE SANG MÁY CHỦ
+================================================================================
+
+  Tạo thư mục chứa project:
+    Mở Explorer → C:\ → Tạo thư mục mới: erp
+    Đường dẫn đầy đủ: C:\erp\
+
+  ── Cách 1: Copy từ USB / ổ cứng ngoài (nhanh nhất) ──
+
+    1. Trên máy dev, copy toàn bộ thư mục "ERP (COPY)" vào USB
+    2. Trên máy chủ, cắm USB → copy nội dung vào C:\erp\
+    3. Kết quả:
+         C:\erp\backend\     ← Django code
+         C:\erp\frontend\    ← React code
+         C:\erp\deploy\      ← File config triển khai
+
+  ── Cách 2: Dùng Git (nếu đã push code lên GitHub) ──
+
+    Mở CMD (Admin):
+      cd C:\
+      git clone https://github.com/your-org/erp-system.git erp
+
+  ── Cách 3: Copy qua mạng LAN ──
+
+    Trên máy dev: Chia sẻ thư mục ERP (COPY) qua Network Share
+    Trên máy chủ: \\IP_MAY_DEV\ERP → Copy vào C:\erp\
+
+
+================================================================================
+PHẦN 4 — CÀI ĐẶT BACKEND (Django + Daphne)
+================================================================================
+
+  Mở CMD với quyền Admin (Click phải CMD → Run as administrator)
+  Tất cả lệnh sau chạy trong CMD.
+
+  ── 4.1 Tạo Virtual Environment ──
+
+    cd C:\erp\backend
+    python -m venv venv
+
+  ── 4.2 Kích hoạt venv ──
+
+    venv\Scripts\activate
+    → Dấu nhắc lệnh sẽ hiện: (venv) C:\erp\backend>
+
+  ── 4.3 Cài dependencies ──
+
+    pip install -r requirements.txt
+    → Đợi vài phút, tải và cài tất cả thư viện
+
+  ── 4.4 Tạo file .env production ──
+
+    Tạo file C:\erp\backend\.env với nội dung sau
+    (Dùng Notepad hoặc VS Code để tạo):
+
+    ┌──────────────────────────────────────────────────────────┐
+    │  DEBUG=False                                             │
+    │  SECRET_KEY=<KEY_NGAU_NHIEN>                            │
+    │  ALLOWED_HOSTS=erp.congty.com,192.168.1.100,localhost   │
+    │  CORS_ALLOWED_ORIGINS=https://erp.congty.com,http://192.168.1.100 │
+    │  ZK_DEVICE_IP=192.168.1.225                             │
+    │  ZK_DEVICE_PORT=5005                                    │
+    │  ZK_DEVICE_TIMEOUT=10                                   │
+    │  ZK_DEVICE_PASSWORD=0                                   │
+    │  ZK_PROTOCOL=adms                                       │
+    └──────────────────────────────────────────────────────────┘
+
+    Tạo SECRET_KEY ngẫu nhiên — chạy lệnh này:
+      python -c "import secrets; print(secrets.token_urlsafe(50))"
+      → Copy kết quả ra → dán vào SECRET_KEY= ở trên
+
+    !! QUAN TRỌNG:
+       - Thay erp.congty.com = domain thật của bạn
+       - Thay 192.168.1.100 = IP máy chủ thật
+       - Thay 192.168.1.225 = IP máy chấm công thật
+
+  ── 4.5 Chạy migration (tạo cấu trúc database) ──
+
+    cd C:\erp\backend
+    venv\Scripts\activate
+    python manage.py migrate
+
+  ── 4.6 Thu thập static files (cho Django Admin, v.v.) ──
+
+    python manage.py collectstatic --noinput
+    → Tạo thư mục: C:\erp\backend\staticfiles\
+
+  ── 4.7 Tạo tài khoản admin ──
+
+    python manage.py createsuperuser
+    → Nhập Username: admin (hoặc tên bạn muốn)
+    → Nhập Email: (bỏ trống được)
+    → Nhập Password: (tối thiểu 8 ký tự)
+    → Confirm password: nhập lại
+
+  ── 4.8 Kiểm tra chạy thử Daphne ──
+
+    cd C:\erp\backend
+    venv\Scripts\activate
+    venv\Scripts\daphne.exe -b 127.0.0.1 -p 8000 config.asgi:application
+
+    → Mở trình duyệt: http://127.0.0.1:8000/api/attendance/device/status/
+    → Nếu trả JSON = Backend OK
+
+    → Nhấn Ctrl+C để dừng (sẽ cấu hình service ở Phần 7)
+
+
+================================================================================
+PHẦN 5 — BUILD FRONTEND (React + Vite)
+================================================================================
+
+  ── 5.1 Cài dependencies ──
+
+    cd C:\erp\frontend
+    npm install
+    → Đợi tải packages (lần đầu ~2-5 phút)
+
+  ── 5.2 Tạo file .env production ──
+
+    Tạo file C:\erp\frontend\.env.production với nội dung:
+
+      VITE_API_BASE_URL=/api
+
+    GHI CHÚ: Giá trị "/api" (relative URL) có nghĩa frontend gọi API
+    qua cùng domain, Nginx sẽ chuyển tiếp đến Daphne.
+    KHÔNG cần ghi IP hay domain cứng vào đây.
+
+  ── 5.3 Build ──
+
+    cd C:\erp\frontend
+    npm run build
+
+    → Đợi ~1-2 phút
+    → Kết quả: C:\erp\frontend\dist\ (thư mục HTML/CSS/JS tĩnh)
+    → Phải thấy dòng: "dist/index.html" và nhiều file .js
+
+
+================================================================================
+PHẦN 6 — CÀI NGINX CHO WINDOWS
+================================================================================
+
+  ── 6.1 Tạo file config Nginx ──
+
+    Mở file: C:\nginx\conf\nginx.conf
+    Xóa toàn bộ nội dung → Dán nội dung sau:
+
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │  worker_processes 1;                                                     │
+  │                                                                          │
+  │  events {                                                                │
+  │      worker_connections 1024;                                            │
+  │  }                                                                       │
+  │                                                                          │
+  │  http {                                                                  │
+  │      include       mime.types;                                           │
+  │      default_type  application/octet-stream;                            │
+  │      sendfile      on;                                                   │
+  │      keepalive_timeout 65;                                               │
+  │      client_max_body_size 20M;                                           │
+  │                                                                          │
+  │      # Đọc file lớn từ ổ đĩa                                            │
+  │      types_hash_max_size 2048;                                           │
+  │                                                                          │
+  │      server {                                                            │
+  │          listen 80;                                                      │
+  │          server_name erp.congty.com 192.168.1.100 localhost;            │
+  │                                                                          │
+  │          # Frontend (React build)                                        │
+  │          root C:/erp/frontend/dist;                                      │
+  │          index index.html;                                               │
+  │                                                                          │
+  │          # SPA fallback                                                  │
+  │          location / {                                                    │
+  │              try_files $uri $uri/ /index.html;                           │
+  │          }                                                               │
+  │                                                                          │
+  │          # API Backend                                                   │
+  │          location /api/ {                                                │
+  │              proxy_pass http://127.0.0.1:8000;                          │
+  │              proxy_set_header Host              $host;                   │
+  │              proxy_set_header X-Real-IP         $remote_addr;           │
+  │              proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for; │
+  │              proxy_set_header X-Forwarded-Proto $scheme;                │
+  │              proxy_read_timeout 120s;                                    │
+  │          }                                                               │
+  │                                                                          │
+  │          # Django Admin                                                  │
+  │          location /admin/ {                                              │
+  │              proxy_pass http://127.0.0.1:8000;                          │
+  │              proxy_set_header Host              $host;                   │
+  │              proxy_set_header X-Real-IP         $remote_addr;           │
+  │              proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for; │
+  │              proxy_set_header X-Forwarded-Proto $scheme;                │
+  │          }                                                               │
+  │                                                                          │
+  │          # WebSocket (frontend realtime)                                 │
+  │          location /ws/ {                                                 │
+  │              proxy_pass http://127.0.0.1:8000;                          │
+  │              proxy_http_version 1.1;                                     │
+  │              proxy_set_header Upgrade    $http_upgrade;                  │
+  │              proxy_set_header Connection "upgrade";                      │
+  │              proxy_set_header Host       $host;                          │
+  │              proxy_read_timeout 86400s;                                  │
+  │          }                                                               │
+  │                                                                          │
+  │          # WebSocket ADMS (máy chấm công push)                          │
+  │          location /pub/ {                                                │
+  │              proxy_pass http://127.0.0.1:8000;                          │
+  │              proxy_http_version 1.1;                                     │
+  │              proxy_set_header Upgrade    $http_upgrade;                  │
+  │              proxy_set_header Connection "upgrade";                      │
+  │              proxy_set_header Host       $host;                          │
+  │              proxy_read_timeout 86400s;                                  │
+  │          }                                                               │
+  │                                                                          │
+  │          # iclock protocol (HTTP push từ máy chấm công)                 │
+  │          location /iclock/ {                                             │
+  │              proxy_pass http://127.0.0.1:8000;                          │
+  │              proxy_set_header Host    $host;                             │
+  │              proxy_set_header X-Real-IP $remote_addr;                   │
+  │          }                                                               │
+  │          location /cdata {                                               │
+  │              proxy_pass http://127.0.0.1:8000;                          │
+  │              proxy_set_header Host    $host;                             │
+  │              proxy_set_header X-Real-IP $remote_addr;                   │
+  │          }                                                               │
+  │                                                                          │
+  │          # Django static files                                           │
+  │          location /static/ {                                             │
+  │              alias C:/erp/backend/staticfiles/;                         │
+  │              expires 30d;                                                │
+  │          }                                                               │
+  │                                                                          │
+  │          # Media files (upload)                                          │
+  │          location /media/ {                                              │
+  │              alias C:/erp/backend/media/;                               │
+  │              expires 7d;                                                 │
+  │          }                                                               │
+  │      }                                                                   │
+  │  }                                                                       │
+  └──────────────────────────────────────────────────────────────────────────┘
+
+    !! Thay 2 chỗ:
+       - server_name: đổi erp.congty.com = domain thật, 192.168.1.100 = IP thật
+       - Đường dẫn C:/erp/ phải khớp với nơi bạn để code
+
+  ── 6.2 Mở port 80 trên Windows Firewall ──
+
+    Mở CMD (Admin):
+      netsh advfirewall firewall add rule ^
+        name="Nginx HTTP" ^
+        dir=in ^
+        action=allow ^
+        protocol=TCP ^
+        localport=80
+
+  ── 6.3 Kiểm tra Nginx config ──
+
+    cd C:\nginx
+    nginx.exe -t
+    → Phải hiện: syntax is ok, test is successful
+
+  ── 6.4 Chạy thử Nginx ──
+
+    cd C:\nginx
+    nginx.exe
+    → Mở trình duyệt: http://127.0.0.1
+    → Nếu hiện trang login ERP = Nginx + Frontend OK
+    → Nếu hiện 502 Bad Gateway = Daphne chưa chạy (bình thường ở bước này)
+
+    Dừng Nginx sau khi test:
+      cd C:\nginx
+      nginx.exe -s stop
+
+
+================================================================================
+PHẦN 7 — CHẠY DAPHNE NHƯ WINDOWS SERVICE (NSSM)
+================================================================================
+
+  NSSM sẽ đăng ký Daphne và Nginx như Windows Service → tự chạy khi bật máy,
+  tự khởi động lại nếu bị crash.
+
+  Mở CMD với quyền Admin cho toàn bộ phần này.
+
+  ── 7.1 Đăng ký Daphne Service ──
+
+    C:\nssm\nssm.exe install erp-backend
+
+    → Cửa sổ NSSM GUI hiện ra, điền thông tin:
+
+    Tab [Application]:
+      Path           : C:\erp\backend\venv\Scripts\daphne.exe
+      Startup dir    : C:\erp\backend
+      Arguments      : -b 127.0.0.1 -p 8000 --proxy-headers config.asgi:application
+
+    Tab [Environment]:
+      Thêm biến môi trường (mỗi dòng 1 biến):
+        DJANGO_SETTINGS_MODULE=config.settings
+        PYTHONPATH=C:\erp\backend
+
+      GHI CHÚ: Django đọc .env tự động qua python-dotenv — không cần
+               copy toàn bộ .env vào đây. Chỉ cần 2 biến trên là đủ.
+
+    Tab [Log on]:
+      Để mặc định (Local System account)
+
+    Tab [Details]:
+      Display name: ERP Backend (Daphne)
+      Description : ERP System - Django ASGI Server
+
+    → Nhấn [Install service]
+
+  ── 7.2 Khởi động Daphne Service ──
+
+    C:\nssm\nssm.exe start erp-backend
+
+    Hoặc qua Services GUI:
+      Windows + R → services.msc
+      → Tìm "ERP Backend (Daphne)" → Click phải → Start
+
+  ── 7.3 Kiểm tra Daphne chạy ──
+
+    C:\nssm\nssm.exe status erp-backend
+    → SERVICE_RUNNING
+
+    # Truy cập API
+    Mở trình duyệt: http://127.0.0.1:8000/api/attendance/device/status/
+    → Phải thấy JSON response
+
+  ── 7.4 Đăng ký Nginx Service ──
+
+    C:\nssm\nssm.exe install nginx-erp
+
+    Tab [Application]:
+      Path        : C:\nginx\nginx.exe
+      Startup dir : C:\nginx
+      Arguments   : (để trống)
+
+    Tab [Details]:
+      Display name: ERP Nginx
+      Description : ERP System - Web Server
+
+    → [Install service]
+    → C:\nssm\nssm.exe start nginx-erp
+
+  ── 7.5 Đặt cả hai service tự khởi động ──
+
+    Mở services.msc:
+      "ERP Backend (Daphne)" → Properties → Startup type: Automatic
+      "ERP Nginx"            → Properties → Startup type: Automatic
+
+  ── 7.6 Kiểm tra sau khi restart máy ──
+
+    Restart máy chủ → Đợi 1 phút → Mở trình duyệt
+    http://192.168.1.100
+    → Phải hiện trang login (không cần chạy lệnh gì)
+
+  ── Lệnh quản lý service (CMD Admin) ──
+
+    # Dừng
+    C:\nssm\nssm.exe stop erp-backend
+    C:\nssm\nssm.exe stop nginx-erp
+
+    # Khởi động
+    C:\nssm\nssm.exe start erp-backend
+    C:\nssm\nssm.exe start nginx-erp
+
+    # Restart
+    C:\nssm\nssm.exe restart erp-backend
+    C:\nssm\nssm.exe restart nginx-erp
+
+    # Xem log (output Daphne)
+    C:\nssm\nssm.exe edit erp-backend
+    → Tab [I/O] → stdout/stderr log file
+
+
+================================================================================
+PHẦN 8 — CÀI CLOUDFLARE TUNNEL (TRUY CẬP TỪ XA)
+================================================================================
+
+  ── 8.1 Mua domain ──
+
+    Mua ở tenten.vn / matbao.net / Cloudflare Registrar
+    Ví dụ: congty.com → subdomain dùng: erp.congty.com
+
+  ── 8.2 Chuyển DNS về Cloudflare (miễn phí) ──
+
+    1. Đăng ký tại https://dash.cloudflare.com (miễn phí)
+    2. Add site → nhập domain → chọn Free plan
+    3. Cloudflare cho 2 nameserver (VD: ns1.cloudflare.com)
+    4. Vào nhà cung cấp domain → đổi nameserver sang Cloudflare
+    5. Đợi 10-30 phút để cập nhật
+
+  ── 8.3 Đăng nhập cloudflared trên máy chủ ──
+
+    Mở CMD (Admin) trên máy chủ Windows:
+
+      cloudflared tunnel login
+
+    → Tự mở trình duyệt → Ủy quyền Cloudflare → Chọn domain
+    → Hệ thống tải .pem về: C:\Users\<user>\.cloudflared\cert.pem
+
+  ── 8.4 Tạo tunnel ──
+
+      cloudflared tunnel create erp-tunnel
+
+    → Ghi nhớ TUNNEL_ID hiện ra:
+      Created tunnel erp-tunnel with id  xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+
+  ── 8.5 Tạo file cấu hình tunnel ──
+
+    Tạo file: C:\Users\<user>\.cloudflared\config.yml
+    (Thay <user> = tên đăng nhập Windows của bạn, VD: Administrator)
+
+    ── Nội dung (thay TUNNEL_ID và domain) ──
+    tunnel: <TUNNEL_ID>
+    credentials-file: C:\Users\<user>\.cloudflared\<TUNNEL_ID>.json
+
+    ingress:
+      - hostname: erp.congty.com
+        service: http://localhost:80
+        originRequest:
+          httpHostHeader: erp.congty.com
+          connectTimeout: 30s
+          noTLSVerify: false
+      - service: http_status:404
+    ── Kết thúc ──
+
+    !! Thay:
+       <TUNNEL_ID> = ID vừa tạo ở bước 8.4
+       <user>      = tên user Windows
+       erp.congty.com = domain thật
+
+  ── 8.6 Tạo DNS record ──
+
+      cloudflared tunnel route dns erp-tunnel erp.congty.com
+
+    → Cloudflare tự tạo CNAME record (erp → <TUNNEL_ID>.cfargotunnel.com)
+
+  ── 8.7 Chạy thử tunnel ──
+
+      cloudflared tunnel run erp-tunnel
+
+    → Mở trình duyệt (dùng 4G, không dùng WiFi cùng mạng):
+    → https://erp.congty.com
+    → Nếu thấy login ERP = tunnel OK
+
+    → Nhấn Ctrl+C để dừng (sẽ cấu hình service ở bước sau)
+
+  ── 8.8 Đăng ký Cloudflare Tunnel như Windows Service ──
+
+      cloudflared service install
+
+    → Tự tạo Windows Service tên "Cloudflare Tunnel"
+
+    Mở services.msc → Tìm "Cloudflare Tunnel":
+      → Startup type: Automatic
+      → Click phải → Start
+
+  ── 8.9 Kiểm tra ──
+
+      sc query "Cloudflare Tunnel"
+      → STATE: RUNNING
+
+    Hoặc mở services.msc → Tìm "Cloudflare Tunnel" → Status: Running
+
+
+================================================================================
+PHẦN 9 — CẤU HÌNH MÁY CHẤM CÔNG
+================================================================================
+
+  Máy chấm công Ronald Jack AI06F phải trỏ về IP LAN máy chủ Windows.
+
+  Trên máy chấm công:
+    Menu → Comm. → Cloud Server Setting
+
+    ┌──────────────────────────────────────────────────────┐
+    │  Domain  : 192.168.1.100   ← IP máy chủ Windows    │
+    │  Port    : 80              ← Port Nginx             │
+    │  HTTPS   : OFF             ← HTTP trong LAN là đủ  │
+    │  Enable  : ON                                        │
+    └──────────────────────────────────────────────────────┘
+
+  !! QUAN TRỌNG:
+     - Port = 80 (Nginx), KHÔNG phải 8000 (Daphne trực tiếp)
+     - Máy chấm công và máy chủ Windows phải cùng LAN
+     - Máy chấm công sẽ tự đẩy data ngay khi có chấm công mới
+
+  Kiểm tra kết nối:
+    Trên máy chủ, mở CMD:
+      type C:\nginx\logs\access.log | findstr iclock
+      → Phải thấy các request từ máy chấm công
+
+    Hoặc xem log Daphne trong NSSM:
+    → C:\nssm\nssm.exe edit erp-backend → Tab [I/O] → Mở file log
+    → Phải thấy: [iclock] Handshake từ SN=xxxxx
+
+
+================================================================================
+PHẦN 10 — KIỂM TRA TOÀN BỘ HỆ THỐNG
+================================================================================
+
+  Chạy checklist từng bước:
+
+  ☐ 1. Services đang chạy?
+       Mở services.msc → Kiểm tra 3 service:
+       - "ERP Backend (Daphne)"  → Running
+       - "ERP Nginx"             → Running
+       - "Cloudflare Tunnel"     → Running
+
+  ☐ 2. Backend hoạt động?
+       Mở trình duyệt: http://127.0.0.1:8000/admin/
+       → Hiện trang Django Admin login
+
+  ☐ 3. Frontend + LAN?
+       Mở trình duyệt: http://192.168.1.100
+       → Hiện trang login ERP
+
+  ☐ 4. Truy cập từ xa (từ điện thoại 4G)?
+       https://erp.congty.com
+       → Hiện trang login ERP (HTTPS)
+
+  ☐ 5. Đăng nhập thành công?
+       Đăng nhập → Vào được dashboard
+
+  ☐ 6. Django Admin?
+       https://erp.congty.com/admin/
+       → Đăng nhập bằng superuser đã tạo
+
+  ☐ 7. Máy chấm công kết nối?
+       Xem log → Thấy Handshake request
+
+  ☐ 8. Chấm công realtime?
+       Quẹt vân tay → Web hiện bản ghi mới
+
+  ☐ 9. Sau khi restart Windows, tự chạy lại?
+       Restart → Đợi 2 phút → http://192.168.1.100 → OK
+
+
+================================================================================
+PHẦN 11 — CẬP NHẬT CODE SAU NÀY
+================================================================================
+
+  ── Khi bạn sửa code trên máy dev ──
+
+  Bước 1: Sửa code trong VS Code bình thường
+  Bước 2: Copy file đã sửa sang máy chủ (USB, LAN Share, hoặc git push/pull)
+
+  ── Nếu dùng Git (khuyến nghị) ──
+
+    Trên máy dev:
+      git add .
+      git commit -m "Mô tả thay đổi"
+      git push origin main
+
+    Trên máy chủ Windows (mở CMD tại C:\erp\):
+      git pull origin main
+
+  ── Sau khi copy/pull code mới, chạy lệnh cập nhật ──
+
+    Tạo sẵn file C:\erp\deploy\update.bat, chạy file này mỗi khi cập nhật:
+
+    (File update.bat đã được tạo sẵn — xem phần dưới)
+
+  ── Nếu chỉ sửa Python (backend) ──
+
+    1. Copy/pull code mới
+    2. Mở CMD (Admin):
+         cd C:\erp\backend
+         venv\Scripts\activate
+         pip install -r requirements.txt
+         python manage.py migrate
+         python manage.py collectstatic --noinput
+    3. Restart service:
+         C:\nssm\nssm.exe restart erp-backend
+
+  ── Nếu chỉ sửa React (frontend) ──
+
+    1. Copy/pull code mới
+    2. Mở CMD:
+         cd C:\erp\frontend
+         npm install
+         npm run build
+    3. KHÔNG cần restart gì — Nginx tự phục vụ file mới
+
+  ── Nếu sửa cả hai ──
+
+    Chạy file: C:\erp\deploy\update.bat
+
+
+================================================================================
+  FILE UPDATE.BAT — TẠO SẴN ĐỂ DÙNG LẠI
+================================================================================
+
+  Tạo file C:\erp\deploy\update.bat với nội dung sau:
+  (Dùng Notepad, lưu với encoding ANSI hoặc UTF-8 BOM)
+
+  ── Nội dung update.bat ──
+  @echo off
+  chcp 65001 >nul
+  echo ========================================
+  echo   ERP UPDATE - %date% %time%
+  echo ========================================
+
+  echo.
+  echo [1/5] Pull code moi (neu dung Git)...
+  cd /d C:\erp
+  git pull origin main 2>nul || echo Khong dung Git, bo qua.
+
+  echo.
+  echo [2/5] Cap nhat backend dependencies...
+  cd /d C:\erp\backend
+  call venv\Scripts\activate.bat
+  pip install -r requirements.txt --quiet
+
+  echo.
+  echo [3/5] Chay migration...
+  python manage.py migrate --noinput
+
+  echo.
+  echo [4/5] Thu thap static files...
+  python manage.py collectstatic --noinput --clear
+
+  echo.
+  echo [5/5] Build frontend...
+  cd /d C:\erp\frontend
+  call npm install --silent
+  call npm run build
+
+  echo.
+  echo Restart Daphne service...
+  C:\nssm\nssm.exe restart erp-backend
+
+  echo.
+  echo ========================================
+  echo   CAP NHAT HOAN TAT!
+  echo ========================================
+  pause
+  ── Kết thúc update.bat ──
+
+  Chạy file này: Click phải → Run as administrator
+
+
+================================================================================
+PHẦN 12 — BACKUP & BẢO TRÌ
+================================================================================
+
+  ── 12.1 Backup database tự động ──
+
+  Tạo file C:\erp\deploy\backup.bat:
+
+  ── Nội dung backup.bat ──
+  @echo off
+  set BACKUP_DIR=C:\erp\backups
+  set DATE_STR=%date:~10,4%%date:~4,2%%date:~7,2%_%time:~0,2%%time:~3,2%
+  set DATE_STR=%DATE_STR: =0%
+
+  if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%"
+
+  copy "C:\erp\backend\db.sqlite3" "%BACKUP_DIR%\db_%DATE_STR%.sqlite3" >nul
+  echo [%date% %time%] Backup: db_%DATE_STR%.sqlite3 >> "%BACKUP_DIR%\backup.log"
+
+  rem Xoa backup cu hon 30 ngay
+  forfiles /p "%BACKUP_DIR%" /m "db_*.sqlite3" /d -30 /c "cmd /c del @file" 2>nul
+  ── Kết thúc backup.bat ──
+
+  Đặt lịch backup tự động mỗi ngày lúc 2h sáng:
+    - Mở Task Scheduler (tìm trong Start Menu)
+    - Create Basic Task
+    - Name: ERP Backup
+    - Trigger: Daily, 02:00
+    - Action: Start a program
+      Program: C:\erp\deploy\backup.bat
+    - Tick: Run with highest privileges
+    - Finish
+
+  ── 12.2 Theo dõi log ──
+
+  Log Nginx:
+    C:\nginx\logs\error.log
+    C:\nginx\logs\access.log
+
+  Log Daphne (cấu hình trong NSSM):
+    C:\nssm\nssm.exe edit erp-backend
+    → Tab [I/O]:
+      Stdout log: C:\erp\logs\daphne-stdout.log
+      Stderr log: C:\erp\logs\daphne-stderr.log
+
+    Sau đó tạo thư mục: mkdir C:\erp\logs
+
+  ── 12.3 Cập nhật Windows ──
+
+  Nên cập nhật Windows mỗi tháng 1 lần.
+  Sau khi update/restart, kiểm tra lại các service.
+
+
+================================================================================
+PHẦN 13 — XỬ LÝ SỰ CỐ
+================================================================================
+
+  ┌────────────────────────────────────────────────────────────────────────────┐
+  │ SỰ CỐ                         │ KIỂM TRA / CÁCH SỬA                    │
+  ├────────────────────────────────────────────────────────────────────────────┤
+  │                                                                            │
+  │  Truy cập http://192.168.1.100 │ Mở services.msc:                        │
+  │  không được (LAN)              │  - "ERP Nginx" phải Running              │
+  │                                │  - "ERP Backend (Daphne)" phải Running   │
+  │                                │ Hoặc CMD Admin:                          │
+  │                                │  C:\nssm\nssm.exe restart erp-backend    │
+  │                                │  C:\nssm\nssm.exe restart nginx-erp      │
+  │                                │                                           │
+  │  Truy cập https://erp.congty   │ Mở services.msc:                        │
+  │  .com không được (internet)    │  - "Cloudflare Tunnel" phải Running      │
+  │                                │  sc start "Cloudflare Tunnel"            │
+  │                                │                                           │
+  │  Lỗi 502 Bad Gateway           │ Daphne chưa chạy:                       │
+  │                                │  C:\nssm\nssm.exe restart erp-backend    │
+  │                                │  → Xem log: C:\erp\logs\daphne-stderr.log│
+  │                                │                                           │
+  │  Máy chấm công không kết nối  │ Kiểm tra:                                │
+  │                                │  1. Ping: ping 192.168.1.225             │
+  │                                │  2. Port máy CC = 80 chưa?               │
+  │                                │  3. IP máy CC = 192.168.1.100 chưa?     │
+  │                                │  4. Firewall cho phép port 80?           │
+  │                                │     netsh advfirewall firewall show rule  │
+  │                                │     name="Nginx HTTP"                    │
+  │                                │                                           │
+  │  Sau khi restart Windows,      │ Mở services.msc:                        │
+  │  web không tự chạy             │  - Startup type = Automatic (Delayed)?   │
+  │                                │  Hoặc thay Automatic = Automatic Delayed │
+  │                                │                                           │
+  │  Nginx lỗi "bind() failed"     │ Port 80 đang bị dùng:                   │
+  │  (port 80 bị chiếm)            │  netstat -ano | findstr :80              │
+  │                                │  → Tìm PID đang dùng → Tắt process đó   │
+  │                                │  Thường gặp: IIS (Internet Info Service) │
+  │                                │  → Mở services.msc → Stop "World Wide    │
+  │                                │    Web Publishing Service" → Disable     │
+  │                                │                                           │
+  │  Static files không load       │ Chạy lại:                               │
+  │  (CSS/JS bị thiếu)             │  cd C:\erp\backend                       │
+  │                                │  venv\Scripts\activate                   │
+  │                                │  python manage.py collectstatic --noinput│
+  │                                │                                           │
+  │  Lỗi Python packages           │ Cài lại:                                 │
+  │                                │  cd C:\erp\backend                       │
+  │                                │  venv\Scripts\activate                   │
+  │                                │  pip install -r requirements.txt         │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+  TỔNG HỢP THỨ TỰ CÀI ĐẶT
+================================================================================
+
+  ☐  1. Đặt IP tĩnh 192.168.1.100 cho máy chủ Windows
+  ☐  2. Tắt Sleep/Hibernate
+  ☐  3. Cài Python 3.12+ (tick Add to PATH)
+  ☐  4. Cài Node.js 20+
+  ☐  5. Cài Git for Windows
+  ☐  6. Tải Nginx → giải nén vào C:\nginx\
+  ☐  7. Tải NSSM → copy nssm.exe vào C:\nssm\
+  ☐  8. Tải cloudflared.exe → copy vào C:\cloudflared\, thêm vào PATH
+  ☐  9. Copy code vào C:\erp\
+  ☐ 10. Backend: tạo venv, pip install, tạo .env, migrate, collectstatic
+  ☐ 11. Tạo superuser
+  ☐ 12. Frontend: npm install, tạo .env.production, npm run build
+  ☐ 13. Cấu hình C:\nginx\conf\nginx.conf
+  ☐ 14. Mở port 80 trên Windows Firewall
+  ☐ 15. Đăng ký Daphne service bằng NSSM
+  ☐ 16. Đăng ký Nginx service bằng NSSM
+  ☐ 17. Kiểm tra LAN: http://192.168.1.100 → OK
+  ☐ 18. Mua domain, chuyển DNS về Cloudflare
+  ☐ 19. Cài và cấu hình Cloudflare Tunnel
+  ☐ 20. Đăng ký cloudflared service (cloudflared service install)
+  ☐ 21. Kiểm tra từ xa: https://erp.congty.com → OK
+  ☐ 22. Cấu hình máy chấm công: Cloud Server = 192.168.1.100:80
+  ☐ 23. Kiểm tra chấm công: quẹt tay → data xuất hiện trên web
+  ☐ 24. Tạo backup.bat, đặt lịch Task Scheduler
+  ☐ 25. Tạo update.bat để dùng khi cập nhật code sau này
+  ☐ 26. Restart Windows → Kiểm tra tự chạy lại → DONE!
+
+  Thời gian ước tính: 2-3 giờ
+
+================================================================================
+  END OF DOCUMENT
+================================================================================

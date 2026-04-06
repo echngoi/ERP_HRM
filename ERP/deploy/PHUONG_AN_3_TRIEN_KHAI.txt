@@ -1,0 +1,739 @@
+================================================================================
+  PHƯƠNG ÁN 3: TRIỂN KHAI LOCAL SERVER + CLOUDFLARE TUNNEL
+  Ngày tạo: 2026-04-06
+================================================================================
+
+  ┌────────────────────────────────────────────────────────────────────────────┐
+  │  KIẾN TRÚC TỔNG THỂ                                                       │
+  │                                                                            │
+  │  Máy chấm công (LAN) ──→ Máy chủ local (tại văn phòng, cùng LAN)        │
+  │                                 │                                          │
+  │                            Cloudflare Tunnel                               │
+  │                                 │                                          │
+  │  Nhân viên (Internet) ──→ erp.congty.com ──→ Máy chủ local               │
+  │                                                                            │
+  │  Nhân viên (LAN)      ──→ 192.168.1.100 ──→ Máy chủ local               │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  Ưu điểm:
+    - Máy chấm công đẩy data qua LAN → 100% ổn định, không phụ thuộc internet
+    - Nhân viên truy cập từ xa qua domain HTTPS → bảo mật, tiện lợi
+    - Không cần mở port trên router → an toàn
+    - Không cần VPS → tiết kiệm chi phí hàng tháng
+    - SSL tự động từ Cloudflare → không cần quản lý certificate
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  MỤC LỤC                                                                    ║
+║                                                                              ║
+║  PHẦN A — CHUẨN BỊ PHẦN CỨNG + HỆ ĐIỀU HÀNH                               ║
+║  PHẦN B — CÀI ĐẶT PHẦN MỀM                                                 ║
+║  PHẦN C — TRIỂN KHAI CODE                                                    ║
+║  PHẦN D — CẤU HÌNH NGINX                                                    ║
+║  PHẦN E — CẤU HÌNH DAPHNE SERVICE                                           ║
+║  PHẦN F — CẤU HÌNH CLOUDFLARE TUNNEL                                       ║
+║  PHẦN G — CẤU HÌNH MÁY CHẤM CÔNG                                           ║
+║  PHẦN H — KIỂM TRA TOÀN BỘ                                                  ║
+║  PHẦN I — CẬP NHẬT CODE SAU NÀY                                             ║
+║  PHẦN J — BACKUP & BẢO TRÌ                                                  ║
+║  PHẦN K — XỬ LÝ SỰ CỐ                                                     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+
+================================================================================
+PHẦN A — CHUẨN BỊ PHẦN CỨNG + HỆ ĐIỀU HÀNH
+================================================================================
+
+  1. MÁY CHỦ LOCAL
+  ────────────────
+  Yêu cầu tối thiểu:
+    - CPU: Intel i3 hoặc tương đương (bất kỳ PC/Mini PC nào)
+    - RAM: 4 GB (khuyến nghị 8 GB)
+    - Ổ cứng: 50 GB trống (SSD thì càng tốt)
+    - Mạng: Cắm dây LAN (không dùng WiFi cho server)
+    - Luôn bật 24/7 (hoặc ít nhất trong giờ làm việc)
+
+  Có thể dùng:
+    - Mini PC (Intel NUC, Beelink, v.v.) — nhỏ gọn, tiết kiệm điện
+    - PC cũ bất kỳ đang không dùng
+    - Laptop cũ (cắm LAN, gập màn hình)
+
+  2. HỆ ĐIỀU HÀNH
+  ────────────────
+  Khuyến nghị: Ubuntu Server 24.04 LTS (miễn phí, ổn định, dễ quản lý)
+  Cũng được:   Windows 10/11 (xem Phụ lục W ở cuối tài liệu)
+
+  Cài Ubuntu Server:
+    a. Tải ISO tại: https://ubuntu.com/download/server
+    b. Tạo USB boot bằng Rufus (Windows) hoặc Etcher
+    c. Boot từ USB, cài đặt theo hướng dẫn
+    d. Chọn "OpenSSH server" khi được hỏi → để SSH từ xa
+    e. Sau khi cài xong, ghi nhớ:
+       - Username đã tạo (VD: erpadmin)
+       - IP máy (VD: 192.168.1.100) — xem bằng lệnh: ip addr
+
+  3. ĐẶT IP TĨNH CHO MÁY CHỦ (QUAN TRỌNG)
+  ──────────────────────────────────────────
+  Máy chủ PHẢI có IP cố định trong LAN. Có 2 cách:
+
+  Cách 1 — Đặt trên router (khuyến nghị):
+    Vào trang quản trị router → DHCP Reservation
+    → Gắn MAC address máy chủ với IP cố định (VD: 192.168.1.100)
+
+  Cách 2 — Đặt trên Ubuntu:
+    sudo nano /etc/netplan/00-installer-config.yaml
+
+    ── Nội dung ──
+    network:
+      version: 2
+      ethernets:
+        eno1:                       # tên card mạng, xem bằng: ip link
+          dhcp4: no
+          addresses:
+            - 192.168.1.100/24
+          routes:
+            - to: default
+              via: 192.168.1.1      # IP router/gateway
+          nameservers:
+            addresses: [8.8.8.8, 1.1.1.1]
+    ── Kết thúc ──
+
+    sudo netplan apply
+
+
+================================================================================
+PHẦN B — CÀI ĐẶT PHẦN MỀM
+================================================================================
+
+  Chạy lần lượt các lệnh sau trên máy chủ (SSH hoặc trực tiếp):
+
+  # 1. Cập nhật hệ thống
+  sudo apt update && sudo apt upgrade -y
+
+  # 2. Cài Python + pip + venv
+  sudo apt install -y python3 python3-pip python3-venv
+
+  # 3. Cài Node.js 20 (để build frontend)
+  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  sudo apt install -y nodejs
+
+  # 4. Cài Nginx
+  sudo apt install -y nginx
+
+  # 5. Cài Git
+  sudo apt install -y git
+
+  # 6. Cài các tiện ích
+  sudo apt install -y curl wget unzip htop
+
+  # 7. Kiểm tra phiên bản
+  python3 --version      # Cần >= 3.12
+  node --version         # Cần >= 20
+  nginx -v               # Bất kỳ
+  git --version          # Bất kỳ
+
+  # 8. Tạo user riêng cho ERP (bảo mật)
+  sudo useradd -m -s /bin/bash erp
+  sudo usermod -aG sudo erp
+
+
+================================================================================
+PHẦN C — TRIỂN KHAI CODE
+================================================================================
+
+  ── Cách 1: Dùng Git (khuyến nghị) ──
+
+  Trên MÁY DEV (PC Windows của bạn), đóng gói code:
+    cd "D:\myproject\ERP (COPY) dự án erp + máy chấm công\ERP (COPY)"
+    git init
+    git add .
+    git commit -m "Initial production deploy"
+    git remote add origin https://github.com/your-org/erp-system.git
+    git push -u origin main
+
+  Trên MÁY CHỦ:
+    sudo mkdir -p /opt/erp
+    sudo chown erp:erp /opt/erp
+    su - erp
+    cd /opt
+    git clone https://github.com/your-org/erp-system.git erp
+
+
+  ── Cách 2: Copy thủ công (USB / SCP) ──
+
+    # Trên máy dev, nén thư mục:
+    # Click phải "ERP (COPY)" → Send to → Compressed (zipped) folder
+    # Copy file .zip sang USB
+
+    # Trên máy chủ:
+    sudo mkdir -p /opt/erp
+    sudo chown erp:erp /opt/erp
+    su - erp
+    cd /opt
+    unzip /media/usb/erp.zip -d erp
+
+
+  ── Sau khi có code, thiết lập Backend ──
+
+  cd /opt/erp/backend
+
+  # Tạo virtual environment
+  python3 -m venv venv
+  source venv/bin/activate
+
+  # Cài dependencies
+  pip install -r requirements.txt
+
+  # Tạo file .env (copy từ mẫu, rồi sửa)
+  cp /opt/erp/deploy/.env.production.example .env
+  nano .env
+
+  ──────────────────────────────────────────────────────────
+  | SỬA CÁC GIÁ TRỊ SAU TRONG .env:                       |
+  |                                                          |
+  | SECRET_KEY   → Tạo key bằng lệnh:                      |
+  |   python3 -c "import secrets; print(secrets.token_urlsafe(50))" |
+  |                                                          |
+  | ALLOWED_HOSTS → Thay erp.congty.com = domain thật       |
+  |                  Thay 192.168.1.100 = IP máy chủ thật   |
+  |                                                          |
+  | CORS_ALLOWED_ORIGINS → Thay tương tự                    |
+  |                                                          |
+  | ZK_DEVICE_IP → IP máy chấm công thật (VD: 192.168.1.225)|
+  ──────────────────────────────────────────────────────────
+
+  # Chạy migration (tạo bảng DB)
+  python manage.py migrate
+
+  # Thu thập static files
+  python manage.py collectstatic --noinput
+
+  # Tạo tài khoản admin (lần đầu tiên)
+  python manage.py createsuperuser
+  # → Nhập username, email, password theo hướng dẫn
+
+
+  ── Thiết lập Frontend ──
+
+  cd /opt/erp/frontend
+
+  # Cài dependencies
+  npm install
+
+  # Copy file env frontend
+  cp /opt/erp/deploy/.env.frontend.production .env.production
+
+  # Build
+  npm run build
+  # → Kết quả: /opt/erp/frontend/dist/ (đây là file HTML/CSS/JS tĩnh)
+
+  LƯU Ý: File .env.frontend.production chứa:
+    VITE_API_BASE_URL=/api
+  Giá trị "/api" nghĩa là frontend gọi API qua cùng domain (qua Nginx proxy).
+  KHÔNG cần sửa gì thêm.
+
+
+================================================================================
+PHẦN D — CẤU HÌNH NGINX
+================================================================================
+
+  # Copy file config có sẵn
+  sudo cp /opt/erp/deploy/nginx-erp.conf /etc/nginx/sites-available/erp
+
+  # Sửa domain / IP cho đúng
+  sudo nano /etc/nginx/sites-available/erp
+  # → Dòng server_name: thay erp.congty.com = domain thật
+  # → Thay 192.168.1.100 = IP máy chủ thật
+
+  # Kích hoạt site
+  sudo ln -s /etc/nginx/sites-available/erp /etc/nginx/sites-enabled/
+  sudo rm -f /etc/nginx/sites-enabled/default
+
+  # Kiểm tra config
+  sudo nginx -t
+  # → Phải hiện: syntax is ok, test is successful
+
+  # Khởi động lại Nginx
+  sudo systemctl reload nginx
+  sudo systemctl enable nginx
+
+
+  ── Giải thích Nginx làm gì ──
+
+  Nginx đóng vai trò "cổng chính" (reverse proxy):
+
+    Truy cập /             → Trả file frontend (React)
+    Truy cập /api/...      → Chuyển tới Daphne (Django REST API)
+    Truy cập /admin/       → Chuyển tới Daphne (Django Admin)
+    Truy cập /ws/          → WebSocket tới Daphne (realtime)
+    Truy cập /pub/chat     → WebSocket tới Daphne (máy chấm công ADMS)
+    Truy cập /iclock/...   → HTTP tới Daphne (máy chấm công iclock)
+    Truy cập /static/      → File tĩnh Django
+    Truy cập /media/       → File upload
+
+
+================================================================================
+PHẦN E — CẤU HÌNH DAPHNE SERVICE (TỰ KHỞI ĐỘNG)
+================================================================================
+
+  # Copy file service có sẵn
+  sudo cp /opt/erp/deploy/erp-backend.service /etc/systemd/system/
+
+  # Nạp service
+  sudo systemctl daemon-reload
+
+  # Bật tự khởi động
+  sudo systemctl enable erp-backend
+
+  # Khởi động
+  sudo systemctl start erp-backend
+
+  # Kiểm tra trạng thái
+  sudo systemctl status erp-backend
+  # → Phải hiện: Active: active (running)
+
+  # Xem log nếu lỗi
+  sudo journalctl -u erp-backend -f --no-pager -n 50
+
+
+  ── Kiểm tra nhanh ──
+
+  # Từ máy chủ
+  curl http://127.0.0.1:8000/api/attendance/device/status/
+  # → Nếu trả JSON = backend đang chạy OK
+
+  # Từ trình duyệt trên máy LAN
+  http://192.168.1.100
+  # → Nếu hiện giao diện login = frontend + nginx OK
+
+
+================================================================================
+PHẦN F — CẤU HÌNH CLOUDFLARE TUNNEL (TRUY CẬP TỪ XA)
+================================================================================
+
+  ── Bước F1: Mua domain ──
+
+  Mua domain tại bất kỳ nhà cung cấp nào:
+    - Việt Nam: tenten.vn, matbao.net, inet.vn
+    - Quốc tế: Cloudflare Registrar, Namecheap, Google Domains
+    
+  VD: mua domain congty.com hoặc congtyabc.vn
+  Subdomain sẽ dùng: erp.congty.com
+
+
+  ── Bước F2: Chuyển DNS về Cloudflare (miễn phí) ──
+
+  1. Đăng ký tại https://dash.cloudflare.com (miễn phí)
+  2. Add site → nhập domain → chọn Free plan
+  3. Cloudflare cho 2 nameserver, VD:
+       ns1.cloudflare.com
+       ns2.cloudflare.com
+  4. Vào nhà cung cấp domain → đổi nameserver sang Cloudflare
+  5. Đợi 10-30 phút để DNS cập nhật
+
+
+  ── Bước F3: Cài Cloudflare Tunnel trên máy chủ ──
+
+  # Cài cloudflared
+  curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb \
+       -o /tmp/cloudflared.deb
+  sudo dpkg -i /tmp/cloudflared.deb
+
+  # Đăng nhập (mở link trong trình duyệt, chọn domain)
+  cloudflared tunnel login
+
+  # Tạo tunnel
+  cloudflared tunnel create erp-tunnel
+  # → Ghi nhớ TUNNEL_ID hiện ra (dạng: abc12345-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+
+
+  ── Bước F4: Cấu hình tunnel ──
+
+  nano ~/.cloudflared/config.yml
+
+  ── Nội dung (thay TUNNEL_ID và domain) ──
+  tunnel: <TUNNEL_ID>
+  credentials-file: /home/erp/.cloudflared/<TUNNEL_ID>.json
+
+  ingress:
+    # WebSocket cho máy chấm công (ADMS)
+    - hostname: erp.congty.com
+      path: /pub/.*
+      service: http://localhost:80
+      originRequest:
+        httpHostHeader: erp.congty.com
+
+    # WebSocket cho frontend realtime
+    - hostname: erp.congty.com
+      path: /ws/.*
+      service: http://localhost:80
+      originRequest:
+        httpHostHeader: erp.congty.com
+
+    # Tất cả còn lại (API, frontend, static, iclock)
+    - hostname: erp.congty.com
+      service: http://localhost:80
+      originRequest:
+        httpHostHeader: erp.congty.com
+
+    # Catch-all (bắt buộc)
+    - service: http_status:404
+  ── Kết thúc ──
+
+
+  ── Bước F5: Tạo DNS record ──
+
+  cloudflared tunnel route dns erp-tunnel erp.congty.com
+  # → Cloudflare tự tạo CNAME record trỏ erp.congty.com → tunnel
+
+
+  ── Bước F6: Chạy tunnel như service (tự khởi động) ──
+
+  sudo cloudflared service install
+  sudo systemctl enable cloudflared
+  sudo systemctl start cloudflared
+
+  # Kiểm tra
+  sudo systemctl status cloudflared
+  # → Active: active (running)
+
+  # Thử truy cập từ internet
+  # Mở trình duyệt → https://erp.congty.com
+  # → Phải hiện trang login ERP
+
+
+  ── Cloudflare Tunnel hoạt động thế nào? ──
+
+    Nhân viên ở nhà
+         │
+         ▼
+    https://erp.congty.com
+         │
+         ▼
+    Cloudflare CDN (gần nhất)
+         │ (tunnel mã hóa)
+         ▼
+    cloudflared (máy chủ local)
+         │
+         ▼
+    Nginx :80
+         │
+         ▼
+    Daphne :8000 (Django)
+
+  → Không mở port nào trên router
+  → HTTPS tự động (Cloudflare cấp SSL)
+  → Bảo mật: không ai biết IP thật của máy chủ
+
+
+================================================================================
+PHẦN G — CẤU HÌNH MÁY CHẤM CÔNG
+================================================================================
+
+  Máy chấm công Ronald Jack AI06F cần trỏ về IP LAN của máy chủ.
+
+  Trên máy chấm công:
+    Menu → Comm. → Cloud Server Setting (Cài đặt máy chủ đám mây)
+
+    ┌─────────────────────────────────────────────┐
+    │  Domain    : 192.168.1.100                  │ ← IP máy chủ local
+    │  Port      : 80                             │ ← Port Nginx (KHÔNG phải 8000)
+    │  Enable    : ON                             │
+    │  ProxyType : None                           │
+    └─────────────────────────────────────────────┘
+
+  QUAN TRỌNG:
+    - Port = 80 (Nginx) chứ KHÔNG phải 8000 (Daphne)
+    - Nginx sẽ chuyển tiếp /iclock/* và /pub/chat tới Daphne
+    - Máy chấm công và máy chủ PHẢI cùng mạng LAN
+    - Sau khi cấu hình, máy chấm công sẽ tự gửi data khi:
+        + Có người chấm công mới (realtime)
+        + Định kỳ polling (mỗi 10-60 giây tùy firmware)
+
+
+  ── Kiểm tra máy chấm công kết nối thành công ──
+
+  Cách 1 — Xem log backend:
+    sudo journalctl -u erp-backend -f | grep iclock
+    # → Phải thấy: [iclock] Handshake từ SN=xxxxx
+
+  Cách 2 — Kiểm tra trên web:
+    Truy cập http://192.168.1.100 → Login → Module chấm công → Trạng thái thiết bị
+    # → Phải hiện: "Máy đang hoạt động" hoặc hiện SN máy chấm công
+
+  Cách 3 — Thử chấm công:
+    Quẹt vân tay/face trên máy → Kiểm tra bảng chấm công trên web
+    # → Phải thấy bản ghi mới xuất hiện (realtime hoặc sau vài giây)
+
+
+================================================================================
+PHẦN H — KIỂM TRA TOÀN BỘ HỆ THỐNG
+================================================================================
+
+  Chạy checklist sau để đảm bảo mọi thứ hoạt động:
+
+  ☐ 1. Backend chạy?
+       sudo systemctl status erp-backend
+       → Active: active (running)
+
+  ☐ 2. Nginx chạy?
+       sudo systemctl status nginx
+       → Active: active (running)
+
+  ☐ 3. Cloudflare Tunnel chạy?
+       sudo systemctl status cloudflared
+       → Active: active (running)
+
+  ☐ 4. Truy cập LAN?
+       Mở trình duyệt → http://192.168.1.100
+       → Hiện trang login
+
+  ☐ 5. Truy cập từ xa?
+       Mở trình duyệt (dùng 4G điện thoại, KHÔNG dùng WiFi công ty)
+       → https://erp.congty.com
+       → Hiện trang login
+
+  ☐ 6. Đăng nhập được?
+       Nhập username/password → Login
+       → Vào dashboard thành công
+
+  ☐ 7. Máy chấm công kết nối?
+       sudo journalctl -u erp-backend -f | grep iclock
+       → Thấy Handshake request
+
+  ☐ 8. Chấm công realtime?
+       Quẹt vân tay → Kiểm tra trên web
+       → Bản ghi xuất hiện ngay
+
+  ☐ 9. Django Admin?
+       Truy cập https://erp.congty.com/admin/
+       → Đăng nhập bằng superuser
+
+  ☐ 10. Sau khi restart máy chủ, tự chạy lại?
+        sudo reboot
+        # Đợi 2 phút
+        → Truy cập lại web → vẫn hoạt động
+
+
+================================================================================
+PHẦN I — CẬP NHẬT CODE SAU NÀY (QUY TRÌNH HÀNG NGÀY)
+================================================================================
+
+  ── Khi bạn sửa code trên máy dev (PC Windows) ──
+
+  Bước 1: Sửa code trong VS Code như bình thường
+  Bước 2: Commit & push
+    git add .
+    git commit -m "Mô tả thay đổi"
+    git push origin main
+
+  Bước 3: SSH vào máy chủ, chạy deploy script
+    ssh erp@192.168.1.100
+    bash /opt/erp/deploy/deploy.sh
+
+  → Script sẽ tự động:
+    - Pull code mới
+    - Cài dependencies mới (nếu có)
+    - Chạy migration (nếu có)
+    - Build lại frontend
+    - Restart backend
+
+  Thời gian: ~1-2 phút
+
+  ── Hoặc deploy từ xa (không cần SSH thủ công) ──
+
+  Trên máy dev, chạy 1 lệnh:
+    ssh erp@192.168.1.100 "bash /opt/erp/deploy/deploy.sh"
+
+
+================================================================================
+PHẦN J — BACKUP & BẢO TRÌ
+================================================================================
+
+  ── Backup database (QUAN TRỌNG) ──
+
+  Database SQLite nằm tại: /opt/erp/backend/db.sqlite3
+  Nên backup ít nhất mỗi ngày.
+
+  # Tạo script backup tự động
+  sudo nano /opt/erp/backup.sh
+
+  ── Nội dung ──
+  #!/bin/bash
+  BACKUP_DIR="/opt/erp/backups"
+  mkdir -p "$BACKUP_DIR"
+  DATE=$(date +%Y%m%d_%H%M%S)
+  cp /opt/erp/backend/db.sqlite3 "$BACKUP_DIR/db_${DATE}.sqlite3"
+  # Giữ lại 30 bản backup gần nhất
+  ls -t "$BACKUP_DIR"/db_*.sqlite3 | tail -n +31 | xargs rm -f 2>/dev/null
+  echo "[$(date)] Backup done: db_${DATE}.sqlite3"
+  ── Kết thúc ──
+
+  chmod +x /opt/erp/backup.sh
+
+  # Đặt lịch backup mỗi ngày lúc 2h sáng
+  crontab -e
+  # Thêm dòng:
+  0 2 * * * /opt/erp/backup.sh >> /opt/erp/backups/backup.log 2>&1
+
+
+  ── Backup media (file đính kèm) ──
+
+  Thư mục media: /opt/erp/backend/media/
+  Nên copy sang ổ cứng ngoài hoặc cloud storage định kỳ.
+
+
+  ── Xem log hệ thống ──
+
+  # Log backend (Django/Daphne)
+  sudo journalctl -u erp-backend -f
+
+  # Log Nginx
+  sudo tail -f /var/log/nginx/error.log
+
+  # Log Cloudflare Tunnel
+  sudo journalctl -u cloudflared -f
+
+
+  ── Cập nhật hệ điều hành (mỗi tháng 1 lần) ──
+
+  sudo apt update && sudo apt upgrade -y
+  sudo systemctl restart erp-backend
+  sudo systemctl restart nginx
+
+
+================================================================================
+PHẦN K — XỬ LÝ SỰ CỐ
+================================================================================
+
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │ SỰ CỐ                        │ CÁCH XỬ LÝ                           │
+  ├────────────────────────────────────────────────────────────────────────┤
+  │                                                                        │
+  │ Web không truy cập được       │ Kiểm tra:                             │
+  │   (LAN)                       │   sudo systemctl status nginx         │
+  │                                │   sudo systemctl status erp-backend  │
+  │                                │   sudo systemctl restart nginx       │
+  │                                │   sudo systemctl restart erp-backend │
+  │                                                                        │
+  │ Web không truy cập được       │ Kiểm tra:                             │
+  │   (từ xa, qua domain)         │   sudo systemctl status cloudflared  │
+  │                                │   sudo systemctl restart cloudflared │
+  │                                │   Kiểm tra Cloudflare Dashboard      │
+  │                                                                        │
+  │ Máy chấm công không đẩy data  │ Kiểm tra:                            │
+  │                                │   1. Máy CC có cùng mạng LAN?        │
+  │                                │   2. Ping máy CC: ping 192.168.1.225 │
+  │                                │   3. Cấu hình Cloud Server đúng IP?  │
+  │                                │   4. Port = 80?                       │
+  │                                │   5. Xem log: journalctl -u erp-backend -f │
+  │                                                                        │
+  │ Lỗi 502 Bad Gateway           │ Backend chưa chạy:                   │
+  │                                │   sudo systemctl restart erp-backend │
+  │                                │   sudo journalctl -u erp-backend -n 50 │
+  │                                                                        │
+  │ Lỗi 500 Internal Server Error │ Lỗi code:                            │
+  │                                │   sudo journalctl -u erp-backend -n 100 │
+  │                                │   → Đọc traceback, sửa code, deploy lại │
+  │                                                                        │
+  │ Sau khi reboot máy chủ,       │ Service không tự chạy:               │
+  │   web không lên                │   sudo systemctl enable erp-backend  │
+  │                                │   sudo systemctl enable nginx        │
+  │                                │   sudo systemctl enable cloudflared  │
+  │                                │   sudo reboot                        │
+  │                                                                        │
+  │ Database bị lỗi / mất dữ liệu │ Khôi phục từ backup:                │
+  │                                │   cp /opt/erp/backups/db_YYYYMMDD.sqlite3 \ │
+  │                                │      /opt/erp/backend/db.sqlite3     │
+  │                                │   sudo systemctl restart erp-backend │
+  └────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+PHỤ LỤC W — NẾU DÙNG WINDOWS SERVER / WINDOWS 10-11
+================================================================================
+
+  Nếu không muốn cài Ubuntu, có thể chạy trên Windows:
+
+  1. Cài Python 3.12+ từ python.org  (tick "Add to PATH")
+  2. Cài Node.js 20+ từ nodejs.org
+  3. Cài Git từ git-scm.com
+  4. Cài Nginx for Windows: https://nginx.org/en/download.html
+
+  Backend (chạy bằng NSSM — Non-Sucking Service Manager):
+    a. Tải NSSM: https://nssm.cc/download
+    b. Giải nén, copy nssm.exe vào C:\nssm\
+    c. Mở CMD (Admin):
+       C:\nssm\nssm.exe install erp-backend
+       → Path: C:\erp\backend\venv\Scripts\daphne.exe
+       → Startup directory: C:\erp\backend
+       → Arguments: -b 127.0.0.1 -p 8000 config.asgi:application
+       → OK
+    d. Khởi động:
+       C:\nssm\nssm.exe start erp-backend
+
+  Nginx (Windows):
+    a. Giải nén nginx vào C:\nginx\
+    b. Copy config: copy deploy\nginx-erp.conf C:\nginx\conf\nginx.conf
+    c. Sửa đường dẫn trong config (dùng \\ thay /)
+    d. Chạy: cd C:\nginx && start nginx
+
+  Cloudflare Tunnel (Windows):
+    a. Tải cloudflared.exe từ:
+       https://github.com/cloudflare/cloudflared/releases
+    b. Các lệnh giống Linux, thay cloudflared bằng cloudflared.exe
+    c. Cài service: cloudflared.exe service install
+
+
+================================================================================
+CÁC FILE ĐÃ TẠO SẴN TRONG THƯ MỤC deploy/
+================================================================================
+
+  deploy/
+    ├── PHUONG_AN_3_TRIEN_KHAI.txt    ← File này (tài liệu hướng dẫn)
+    ├── .env.production.example         ← Mẫu file .env cho backend
+    ├── .env.frontend.production        ← File .env cho frontend build
+    ├── nginx-erp.conf                  ← Config Nginx (copy sang server)
+    ├── erp-backend.service             ← Systemd service (copy sang server)
+    └── deploy.sh                       ← Script deploy tự động
+
+
+  ── Các thay đổi trong code ──
+
+  backend/config/settings.py đã được sửa:
+    - SECRET_KEY      → đọc từ .env (mặc định dev key nếu không có)
+    - DEBUG           → đọc từ .env (mặc định True nếu không có)
+    - ALLOWED_HOSTS   → đọc từ .env (mặc định cho dev nếu không có)
+    - CORS_ALLOWED_ORIGINS → đọc từ .env
+    - Thêm STATIC_ROOT = staticfiles/ (cần cho collectstatic)
+
+  → Code vẫn chạy bình thường trên máy dev (giá trị mặc định = dev)
+  → Trên production chỉ cần tạo file .env là đủ
+
+
+================================================================================
+TÓM TẮT: THỨ TỰ THỰC HIỆN
+================================================================================
+
+  ☐  1. Chuẩn bị máy chủ local (PC/Mini PC), cài Ubuntu Server
+  ☐  2. Đặt IP tĩnh cho máy chủ
+  ☐  3. Cài phần mềm (Python, Node, Nginx, Git)
+  ☐  4. Copy code sang máy chủ
+  ☐  5. Cài backend (venv, pip install, .env, migrate, collectstatic)
+  ☐  6. Build frontend (npm install, npm run build)
+  ☐  7. Cấu hình Nginx (copy config, enable site)
+  ☐  8. Cấu hình Daphne service (copy service, enable, start)
+  ☐  9. Kiểm tra LAN: http://192.168.1.100 → login OK
+  ☐ 10. Mua domain, chuyển DNS về Cloudflare
+  ☐ 11. Cài Cloudflare Tunnel (cloudflared)
+  ☐ 12. Kiểm tra từ xa: https://erp.congty.com → login OK
+  ☐ 13. Cấu hình máy chấm công trỏ về 192.168.1.100:80
+  ☐ 14. Kiểm tra chấm công: quẹt tay → data lên web
+  ☐ 15. Thiết lập backup tự động
+  ☐ 16. DONE!
+
+  Thời gian ước tính: 2-4 giờ (nếu đã có máy chủ + domain)
+
+================================================================================
+  END OF DOCUMENT
+================================================================================

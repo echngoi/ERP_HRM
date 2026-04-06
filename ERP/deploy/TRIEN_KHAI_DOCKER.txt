@@ -1,0 +1,726 @@
+================================================================================
+  HƯỚNG DẪN TRIỂN KHAI ERP BẰNG DOCKER
+  WSL 2 + Docker Compose + PostgreSQL + Cloudflare Tunnel
+  Ngày tạo: 2026-04-06
+================================================================================
+
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │  SO SÁNH: CÀI THỦ CÔNG vs DOCKER                                       │
+  │                                                                          │
+  │                      Thủ công              Docker + Git                  │
+  │  Cài Python         ✗ Phải cài            Có sẵn trong image            │
+  │  Cài Node.js        ✗ Phải cài            Có sẵn trong image            │
+  │  Cài Nginx          ✗ Phải cài            Có sẵn trong image            │
+  │  Cài PostgreSQL     ✗ Phải cài            Có sẵn trong image            │
+  │  pip install        ✗ Chạy thủ công       Tự động khi build             │
+  │  npm install+build  ✗ Chạy thủ công       Tự động khi build             │
+  │  Cấu hình Nginx     ✗ Copy/sửa file       Đã nhúng trong image          │
+  │  Tạo service        ✗ systemd/NSSM        Tự động restart               │
+  │  Chuyển máy khác    ✗ Làm lại từ đầu      git clone + 1 lệnh           │
+  │  Cập nhật code      ✗ Copy thủ công       git push → tự deploy          │
+  │  Thời gian cài      2-3 giờ               15-20 phút                    │
+  │                                                                          │
+  │  ★ Git + Docker = Push code → Tự build + deploy → Không cần SSH thủ công│
+  └──────────────────────────────────────────────────────────────────────────┘
+
+
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │  KIẾN TRÚC DOCKER                                                       │
+  │                                                                          │
+  │  docker compose up -d                                                    │
+  │    ├── db        (PostgreSQL 16)      ← Database bền vững               │
+  │    ├── backend   (Daphne + Django)    ← API + WebSocket + iclock        │
+  │    └── frontend  (Nginx + React)      ← Web UI + reverse proxy          │
+  │          ↓ :80                                                           │
+  │    ┌─────────────┐                                                       │
+  │    │   Nginx      │ /       → React SPA                                 │
+  │    │   (frontend) │ /api/   → backend:8000                              │
+  │    │              │ /ws/    → backend:8000 (WebSocket)                   │
+  │    │              │ /pub/   → backend:8000 (máy chấm công WS)           │
+  │    │              │ /iclock/→ backend:8000 (máy chấm công HTTP)         │
+  │    └─────────────┘                                                       │
+  │          ↑ :80                                                           │
+  │    Máy chấm công (LAN) + Nhân viên (LAN/Internet via Cloudflare)       │
+  └──────────────────────────────────────────────────────────────────────────┘
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  MỤC LỤC                                                                    ║
+║                                                                              ║
+║  PHẦN 1  — CÀI WSL 2 + DOCKER DESKTOP                                      ║
+║  PHẦN 2  — CHUẨN BỊ CODE (GIT) + FILE .ENV              ← ĐÃ CẬP NHẬT    ║
+║  PHẦN 3  — BUILD VÀ CHẠY (CHỈ 3 LỆNH)                                     ║
+║  PHẦN 4  — PORT FORWARDING (WINDOWS → WSL)                                 ║
+║  PHẦN 5  — CLOUDFLARE TUNNEL                                               ║
+║  PHẦN 6  — CẤU HÌNH MÁY CHẤM CÔNG                                         ║
+║  PHẦN 7  — KIỂM TRA                                                        ║
+║  PHẦN 8  — CẬP NHẬT CODE (GIT + AUTO DEPLOY)            ← MỚI             ║
+║  PHẦN 9  — MIGRATE DỮ LIỆU TỪ SQLITE → POSTGRESQL                        ║
+║  PHẦN 10 — BACKUP                                                           ║
+║  PHẦN 11 — LỆNH DOCKER THƯỜNG DÙNG                                        ║
+║  PHẦN 12 — XỬ LÝ SỰ CỐ                                                   ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+
+================================================================================
+PHẦN 1 — CÀI WSL 2 + DOCKER DESKTOP
+================================================================================
+
+  Chỉ cần cài 2 thứ trên Windows. Không cần cài Python, Node, Nginx, PostgreSQL.
+
+  ── 1.1 Cài WSL 2 ──
+
+  Mở PowerShell (Admin):
+    wsl --install
+
+  → Restart máy → Đặt username/password Ubuntu → Xong.
+
+  ── 1.2 Cài Docker Desktop ──
+
+  Tải tại: https://www.docker.com/products/docker-desktop/
+  → Chọn "Docker Desktop for Windows"
+  → Cài đặt → Restart nếu được yêu cầu
+
+  Khi Docker Desktop khởi động lần đầu:
+    Settings → Resources → WSL Integration:
+      → Tick "Ubuntu-24.04"                   ← BẮT BUỘC
+    Settings → General:
+      → Tick "Start Docker Desktop when you sign in"  ← Tự chạy khi bật máy
+
+  Kiểm tra trong Ubuntu terminal:
+    docker --version       # Docker version 27.x
+    docker compose version # Docker Compose version v2.x
+
+  ── 1.3 Cài xong → Bạn đã có ──
+
+    ✓ Docker Engine (chạy container)
+    ✓ Docker Compose (quản lý multi-container)
+    ✓ WSL 2 + Ubuntu (môi trường Linux)
+    ✗ KHÔNG CẦN cài Python, Node, Nginx, PostgreSQL, pip, npm
+
+
+================================================================================
+PHẦN 2 — CHUẨN BỊ CODE (GIT) + FILE .ENV
+================================================================================
+
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │  THAY ĐỔI LỚN: Dùng Git thay vì copy thủ công                         │
+  │                                                                          │
+  │  ★ Máy dev → git push → GitHub/Gitea → máy chủ git pull → auto deploy  │
+  │  ★ Không cần USB, không cần copy file, không sợ thiếu/thừa             │
+  └──────────────────────────────────────────────────────────────────────────┘
+
+  ── 2.1 (Máy DEV) Đẩy code lên Git lần đầu ──
+
+  Mở terminal tại thư mục dự án (nơi có docker-compose.yml):
+
+    cd D:\myproject\ERP_HRM_New\ERP
+
+    # Init Git repo
+    git init
+    git add .
+    git commit -m "Initial commit: ERP system"
+
+    # Tạo repo trên GitHub (hoặc Gitea) rồi:
+    git remote add origin https://github.com/YOUR_ORG/erp-system.git
+    git branch -M main
+    git push -u origin main
+
+  File .gitignore đã có sẵn, tự động loại trừ:
+    ✗ .env (mật khẩu)       ✗ db.sqlite3 (DB dev)
+    ✗ node_modules/          ✗ __pycache__/
+    ✗ media/* (file upload)  ✗ backups/
+    ✗ cloudflared/           ✗ venv/
+
+  ── 2.2 (Máy PROD) Clone code từ Git ──
+
+  Mở Ubuntu terminal:
+    sudo mkdir -p /opt/erp
+    sudo chown $(whoami):$(whoami) /opt/erp
+
+    # --- Nếu dùng GitHub (SSH khuyến nghị) ---
+    ssh-keygen -t ed25519 -C "erp-server"
+    cat ~/.ssh/id_ed25519.pub
+    → Copy public key → GitHub → Settings → SSH Keys → Add
+
+    git clone git@github.com:YOUR_ORG/erp-system.git /opt/erp
+
+    # --- Hoặc dùng HTTPS + token ---
+    git clone https://github.com/YOUR_ORG/erp-system.git /opt/erp
+
+    # Kiểm tra
+    ls /opt/erp/
+    → backend/  frontend/  deploy/  docker-compose.yml  .gitignore
+
+  ── 2.3 (Máy PROD) Tạo file .env ──
+
+    cd /opt/erp
+    cp deploy/.env.docker.example .env
+    nano .env
+
+  Sửa các giá trị:
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │  DEBUG=False                                                          │
+  │  SECRET_KEY=<tạo bằng lệnh bên dưới>                                │
+  │  ALLOWED_HOSTS=erp.congty.com,192.168.1.100,localhost,127.0.0.1     │
+  │  CORS_ALLOWED_ORIGINS=https://erp.congty.com,http://192.168.1.100   │
+  │  DB_NAME=erp                                                         │
+  │  DB_USER=erp                                                         │
+  │  DB_PASSWORD=MatKhauManh123!                         ← ĐỔI MẬT KHẨU│
+  │  DB_HOST=db                                                          │
+  │  DB_PORT=5432                                                        │
+  │  ZK_DEVICE_IP=192.168.1.225                                         │
+  │  ZK_DEVICE_PORT=5005                                                │
+  │  ZK_PROTOCOL=adms                                                   │
+  └────────────────────────────────────────────────────────────────────────┘
+
+  Tạo SECRET_KEY:
+    docker run --rm python:3.12-slim python -c "import secrets; print(secrets.token_urlsafe(50))"
+    → Copy kết quả → dán vào SECRET_KEY=
+
+  !! QUAN TRỌNG: DB_HOST=db (tên service trong docker-compose, KHÔNG phải localhost)
+  !! File .env nằm trong .gitignore → KHÔNG bị đẩy lên Git → an toàn
+
+
+================================================================================
+PHẦN 3 — BUILD VÀ CHẠY (CHỈ 3 LỆNH)
+================================================================================
+
+  Mở Ubuntu terminal:
+
+  cd /opt/erp
+
+  # ── Lệnh 1: Build tất cả images ──
+  docker compose build
+
+  → Docker tự động:
+    - Tải Python 3.12 image → cài pip requirements → copy code backend
+    - Tải Node 20 image → npm install → npm run build → copy vào Nginx image
+    - Tải PostgreSQL 16 image
+  → Lần đầu mất ~5-10 phút (tải images). Các lần sau chỉ ~1-2 phút.
+
+  # ── Lệnh 2: Chạy tất cả containers ──
+  docker compose up -d
+
+  → Khởi động 3 containers: db, backend, frontend
+  → Đợi ~10 giây cho PostgreSQL sẵn sàng
+
+  # ── Lệnh 3: Init database + tạo admin ──
+  # Chạy migration
+  docker compose exec backend python manage.py migrate
+
+  # Thu thập static files
+  docker compose exec backend python manage.py collectstatic --noinput
+
+  # Tạo tài khoản admin
+  docker compose exec -it backend python manage.py createsuperuser
+  → Nhập username, email (bỏ trống được), password
+
+  ── XONG! ──
+
+  Mở trình duyệt: http://localhost
+  → Trang login ERP hiện ra → Đăng nhập với superuser vừa tạo
+
+  ── Hoặc dùng script init có sẵn (Linux) ──
+
+  bash /opt/erp/deploy/docker-init.sh
+
+
+================================================================================
+PHẦN 4 — PORT FORWARDING (WINDOWS → WSL)
+================================================================================
+
+  Giống như hướng dẫn WSL 2 thủ công — cần script port forward để máy
+  chấm công và LAN truy cập được.
+
+  ── 4.1 Tạo script ──
+
+  Tạo file C:\erp-portforward.ps1 (đã có sẵn trong deploy/erp-portforward.ps1)
+  Copy từ: \\wsl$\Ubuntu-24.04\opt\erp\deploy\erp-portforward.ps1
+       → C:\erp-portforward.ps1
+
+  ── 4.2 Chạy thử ──
+
+  PowerShell (Admin):
+    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+    C:\erp-portforward.ps1
+
+  ── 4.3 Đặt lịch Task Scheduler ──
+
+  Giống Phần 9 trong file TRIEN_KHAI_WSL2.txt:
+    Task Scheduler → Create Task:
+      Name: ERP Port Forward
+      Trigger: At startup, delay 30 seconds
+      Action: powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\erp-portforward.ps1"
+      Run with highest privileges: Yes
+
+  Kiểm tra từ máy LAN: http://192.168.1.100 → Trang login ERP
+
+
+================================================================================
+PHẦN 5 — CLOUDFLARE TUNNEL (TRONG DOCKER)
+================================================================================
+
+  Cloudflare Tunnel có thể chạy như 1 container nữa — không cần cài gì thêm!
+
+  ── 5.1 Setup Cloudflare (một lần) ──
+
+  Trong Ubuntu:
+    # Cài cloudflared tạm để login + tạo tunnel
+    curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb \
+         -o /tmp/cloudflared.deb
+    sudo dpkg -i /tmp/cloudflared.deb
+
+    # Đăng nhập
+    cloudflared tunnel login
+
+    # Tạo tunnel
+    cloudflared tunnel create erp-tunnel
+    → Ghi nhớ TUNNEL_ID
+
+    # Tạo DNS record
+    cloudflared tunnel route dns erp-tunnel erp.congty.com
+
+    # Copy credentials vào thư mục project
+    mkdir -p /opt/erp/cloudflared
+    cp ~/.cloudflared/*.json /opt/erp/cloudflared/
+    cp ~/.cloudflared/cert.pem /opt/erp/cloudflared/
+
+  ── 5.2 Tạo config tunnel ──
+
+    nano /opt/erp/cloudflared/config.yml
+
+    ── Nội dung ──
+    tunnel: <TUNNEL_ID>
+    credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
+
+    ingress:
+      - hostname: erp.congty.com
+        service: http://frontend:80
+        originRequest:
+          httpHostHeader: erp.congty.com
+      - service: http_status:404
+    ── Kết thúc ──
+
+  ── 5.3 Thêm tunnel vào docker-compose ──
+
+  Mở file /opt/erp/docker-compose.yml, thêm service cloudflared:
+
+    nano /opt/erp/docker-compose.yml
+
+  Thêm phần sau vào cuối block "services:" (trước "volumes:"):
+
+    # ── Cloudflare Tunnel ──
+    cloudflared:
+      image: cloudflare/cloudflared:latest
+      restart: always
+      depends_on:
+        - frontend
+      command: tunnel run
+      volumes:
+        - ./cloudflared:/etc/cloudflared:ro
+      environment:
+        - TUNNEL_CONFIG=/etc/cloudflared/config.yml
+
+  ── 5.4 Chạy lại ──
+
+    cd /opt/erp
+    docker compose up -d
+
+  → Container cloudflared tự kết nối → https://erp.congty.com hoạt động
+
+
+================================================================================
+PHẦN 6 — CẤU HÌNH MÁY CHẤM CÔNG
+================================================================================
+
+  Trên máy chấm công Ronald Jack AI06F:
+    Menu → Comm. → Cloud Server Setting
+
+    ┌───────────────────────────────────────────────────┐
+    │  Domain  : 192.168.1.100  ← IP Windows           │
+    │  Port    : 80                                      │
+    │  Enable  : ON                                      │
+    └───────────────────────────────────────────────────┘
+
+  Luồng:
+    Máy CC → 192.168.1.100:80 (Windows)
+    → Port Forward script
+    → WSL Docker frontend:80 (Nginx)
+    → backend:8000 (Daphne)
+    → PostgreSQL (db container)
+
+
+================================================================================
+PHẦN 7 — KIỂM TRA
+================================================================================
+
+  # Kiểm tra containers chạy
+  docker compose ps
+  → 3 (hoặc 4 nếu có cloudflared) containers: Status = Up
+
+  ☐ 1. http://localhost           → Trang login (từ chính máy chủ)
+  ☐ 2. http://192.168.1.100       → Trang login (từ LAN)
+  ☐ 3. https://erp.congty.com     → Trang login (từ xa, qua 4G)
+  ☐ 4. Đăng nhập                  → Vào dashboard
+  ☐ 5. /admin/                    → Django Admin
+  ☐ 6. Máy chấm công             → Log thấy Handshake
+  ☐ 7. Quẹt vân tay              → Bản ghi xuất hiện trên web
+  ☐ 8. Restart Windows            → Đợi 2 phút → Tự lên lại
+
+
+================================================================================
+PHẦN 8 — CẬP NHẬT CODE (GIT + AUTO DEPLOY)
+================================================================================
+
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │  LUỒNG CẬP NHẬT MỚI:                                                    │
+  │                                                                          │
+  │  Máy DEV                    GitHub/Gitea              Máy PROD          │
+  │  ────────                   ───────────               ──────────        │
+  │  Sửa code                                                               │
+  │  git add + commit                                                        │
+  │  git push ─────────────→  Nhận commit                                   │
+  │                             │                                            │
+  │                             ├─ Webhook POST ──────→  webhook-server.py  │
+  │                             │     (tự động)           docker-deploy.sh  │
+  │                             │                         build + restart   │
+  │                             │                                            │
+  │                             └─ HOẶC crontab poll ─→  git-poll-deploy   │
+  │                                  (mỗi 2 phút)        docker-deploy.sh  │
+  │                                                                          │
+  │  ★ Bạn chỉ cần: git push → Máy chủ TỰ CẬP NHẬT trong 1-3 phút       │
+  └──────────────────────────────────────────────────────────────────────────┘
+
+  ── 8.1 (Máy DEV) Push code thường ngày ──
+
+    cd D:\myproject\ERP_HRM_New\ERP
+    git add .
+    git commit -m "fix: sửa lỗi tính công"
+    git push origin main
+
+  ── 8.2 (Máy PROD) Deploy thủ công khi cần ──
+
+    cd /opt/erp
+    bash deploy/docker-deploy.sh
+
+  Script docker-deploy.sh TỰ ĐỘNG:
+    ✓ git pull
+    ✓ Phát hiện file nào thay đổi (backend/frontend/cả hai)
+    ✓ Chỉ build lại phần thay đổi (tiết kiệm thời gian)
+    ✓ Chạy migrate nếu có migration mới
+    ✓ Collect static files
+    ✓ Dọn dẹp images cũ
+    ✓ Ghi log vào deploy/deploy.log
+
+  ── 8.3 Auto Deploy - CÁCH 1: Webhook (khuyến nghị) ──
+
+  Dùng khi máy chủ có thể nhận request từ Internet (qua Cloudflare Tunnel).
+
+  Bước 1: Tạo webhook secret
+    WEBHOOK_SECRET=$(openssl rand -hex 32)
+    echo "Lưu lại: $WEBHOOK_SECRET"
+
+  Bước 2: Cài service webhook trên máy chủ
+    # Sửa WEBHOOK_SECRET trong file service
+    sudo nano /opt/erp/deploy/erp-webhook.service
+    → Dòng Environment=WEBHOOK_SECRET=... → dán secret vừa tạo
+
+    # Copy và kích hoạt service
+    sudo cp /opt/erp/deploy/erp-webhook.service /etc/systemd/system/
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now erp-webhook
+
+    # Kiểm tra
+    sudo systemctl status erp-webhook
+    curl http://127.0.0.1:9000/health    → OK
+
+  Bước 3: Mở port 9000 qua Cloudflare Tunnel
+    Sửa /opt/erp/cloudflared/config.yml, thêm trước dòng http_status:404:
+
+      - hostname: erp.congty.com
+        path: /webhook
+        service: http://backend:9000
+        originRequest:
+          httpHostHeader: erp.congty.com
+
+    HOẶC đơn giản hơn — thêm location trong Nginx (frontend/nginx.conf):
+
+      location /webhook {
+          proxy_pass http://host.docker.internal:9000;
+      }
+
+    Sau đó rebuild frontend:
+      docker compose build frontend && docker compose up -d frontend
+
+  Bước 4: Cấu hình webhook trên GitHub
+    Repo → Settings → Webhooks → Add webhook:
+      Payload URL:  https://erp.congty.com/webhook
+      Content type: application/json
+      Secret:       <WEBHOOK_SECRET ở bước 1>
+      Events:       Just the push event
+      → Add webhook
+
+  Bước 5: Test
+    Sửa 1 dòng code → git push → Đợi 1-3 phút
+    Kiểm tra: cat /opt/erp/deploy/deploy.log
+    → Thấy "DEPLOY THANH CONG!" → OK!
+
+  ── 8.4 Auto Deploy - CÁCH 2: Crontab Poll (đơn giản hơn) ──
+
+  Dùng khi máy chủ KHÔNG nhận được webhook (mạng nội bộ, không public IP).
+  Crontab kiểm tra Git mỗi 2 phút, nếu có code mới → tự deploy.
+
+    # Cho deploy script quyền chạy
+    chmod +x /opt/erp/deploy/git-poll-deploy.sh
+    chmod +x /opt/erp/deploy/docker-deploy.sh
+
+    # Thêm vào crontab
+    crontab -e
+
+    # Thêm dòng sau (kiểm tra mỗi 2 phút):
+    */2 * * * * /opt/erp/deploy/git-poll-deploy.sh >> /opt/erp/deploy/poll.log 2>&1
+
+  Kiểm tra:
+    git push 1 commit → Đợi tối đa 2 phút
+    cat /opt/erp/deploy/poll.log   → "Phát hiện code mới"
+    cat /opt/erp/deploy/deploy.log → "DEPLOY THANH CONG!"
+
+  ── 8.5 Xem log deploy ──
+
+    # Log deploy chính
+    cat /opt/erp/deploy/deploy.log
+
+    # Log webhook server
+    cat /opt/erp/deploy/webhook.log
+    sudo journalctl -u erp-webhook -f
+
+    # Log poll
+    cat /opt/erp/deploy/poll.log
+
+
+================================================================================
+PHẦN 9 — MIGRATE DỮ LIỆU TỪ SQLITE → POSTGRESQL (NẾU CÓ)
+================================================================================
+
+  Nếu bạn đã có dữ liệu trong db.sqlite3 (từ máy dev) và muốn chuyển
+  sang PostgreSQL:
+
+  # Bước 1: Export dữ liệu từ SQLite (trên máy dev hoặc chính máy chủ)
+  cd /opt/erp/backend
+  python3 -m venv venv_temp && source venv_temp/bin/activate
+  pip install django==6.0.3 djangorestframework django-filter django-cors-headers \
+              djangorestframework_simplejwt channels daphne python-dotenv \
+              pillow openpyxl django-extensions
+
+  # Đảm bảo settings dùng SQLite (bỏ biến DB_ENGINE tạm thời)
+  unset DB_ENGINE
+  python manage.py dumpdata --exclude auth.permission --exclude contenttypes \
+      --indent 2 > /tmp/erp_data.json
+  deactivate && rm -rf venv_temp
+
+  # Bước 2: Import vào PostgreSQL (trong Docker)
+  cd /opt/erp
+  docker compose exec backend python manage.py migrate --noinput
+  docker compose exec -T backend python manage.py loaddata - < /tmp/erp_data.json
+
+  !! Nếu lỗi xung đột, chạy:
+  docker compose exec backend python manage.py flush --noinput
+  docker compose exec -T backend python manage.py loaddata - < /tmp/erp_data.json
+
+
+================================================================================
+PHẦN 10 — BACKUP
+================================================================================
+
+  ── Backup PostgreSQL ──
+
+  # Backup 1 lần
+  docker compose exec db pg_dump -U erp erp > /opt/erp/backups/db_$(date +%Y%m%d_%H%M%S).sql
+
+  # Khôi phục
+  docker compose exec -T db psql -U erp erp < /opt/erp/backups/db_20260406_020000.sql
+
+  ── Backup tự động (crontab) ──
+
+  crontab -e
+  # Thêm:
+  0 2 * * * docker compose -f /opt/erp/docker-compose.yml exec -T db pg_dump -U erp erp > /opt/erp/backups/db_$(date +\%Y\%m\%d).sql
+  5 2 * * * find /opt/erp/backups -name "db_*.sql" -mtime +30 -delete
+
+  mkdir -p /opt/erp/backups
+
+  ── Backup media (files upload) ──
+
+  # Media nằm trong Docker volume. Copy ra ngoài:
+  docker cp $(docker compose ps -q frontend):/app/media /opt/erp/backups/media_$(date +%Y%m%d)/
+
+
+================================================================================
+PHẦN 11 — LỆNH DOCKER THƯỜNG DÙNG
+================================================================================
+
+  cd /opt/erp  ← Phải ở thư mục có docker-compose.yml
+
+  # ── Quản lý containers ──
+  docker compose ps                       # Xem trạng thái
+  docker compose up -d                    # Khởi động
+  docker compose down                     # Dừng (giữ data)
+  docker compose restart                  # Restart tất cả
+  docker compose restart backend          # Restart 1 service
+
+  # ── Xem log ──
+  docker compose logs -f                  # Log tất cả (realtime)
+  docker compose logs -f backend          # Log backend
+  docker compose logs -f frontend         # Log frontend (nginx)
+  docker compose logs -f db               # Log PostgreSQL
+  docker compose logs backend --tail 50   # 50 dòng cuối
+
+  # ── Chạy lệnh trong container ──
+  docker compose exec backend bash                      # Vào shell backend
+  docker compose exec backend python manage.py shell    # Django shell
+  docker compose exec backend python manage.py migrate  # Migration
+  docker compose exec db psql -U erp erp               # PostgreSQL shell
+
+  # ── Build lại ──
+  docker compose build                   # Build tất cả
+  docker compose build --no-cache        # Build lại từ đầu (khi lỗi cache)
+  docker compose up -d --build           # Build + chạy luôn
+
+  # ── Dọn dẹp ──
+  docker system prune -f                 # Xóa images/containers không dùng
+  docker volume ls                       # Liệt kê volumes (data)
+
+
+================================================================================
+PHẦN 12 — XỬ LÝ SỰ CỐ
+================================================================================
+
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │ SỰ CỐ                         │ CÁCH XỬ LÝ                          │
+  ├────────────────────────────────────────────────────────────────────────┤
+  │                                                                        │
+  │ docker compose up bị lỗi      │ Xem log chi tiết:                    │
+  │                                │   docker compose logs --tail 30      │
+  │                                │   docker compose logs backend        │
+  │                                                                        │
+  │ Backend lỗi "connection        │ PostgreSQL chưa sẵn sàng:            │
+  │   refused" to db               │   docker compose restart backend     │
+  │                                │   (healthcheck tự đợi, nhưng đôi khi│
+  │                                │    lần đầu cần restart)              │
+  │                                                                        │
+  │ Lỗi 502 Bad Gateway           │ Backend container chưa start:        │
+  │                                │   docker compose ps                  │
+  │                                │   docker compose restart backend     │
+  │                                                                        │
+  │ LAN không truy cập được       │ Port forward chưa chạy:              │
+  │   http://192.168.1.100         │   PowerShell (Admin):                │
+  │                                │   C:\erp-portforward.ps1             │
+  │                                │   netsh interface portproxy show v4tov4 │
+  │                                                                        │
+  │ Máy chấm công k kết nối       │ 1. Port forward chạy chưa?           │
+  │                                │ 2. docker compose logs -f backend    │
+  │                                │    | grep iclock                     │
+  │                                │ 3. IP/Port máy CC đúng chưa?        │
+  │                                                                        │
+  │ Mất data sau docker compose    │ Data nằm trong Docker volumes,       │
+  │   down                         │ KHÔNG mất khi down. Chỉ mất khi:    │
+  │                                │   docker compose down -v  ← CẤM!   │
+  │                                │   (flag -v xóa volumes)             │
+  │                                                                        │
+  │ Build bị stuck/lỗi cache       │ Build lại sạch:                      │
+  │                                │   docker compose build --no-cache   │
+  │                                                                        │
+  │ Docker Desktop không mở        │ Restart Docker Desktop từ System Tray│
+  │                                │ Hoặc: wsl --shutdown rồi mở lại     │
+  │                                                                        │
+  │ Hết dung lượng                 │ Dọn dẹp:                             │
+  │                                │   docker system prune -f             │
+  │                                │   docker image prune -a              │
+  └────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+  SO SÁNH CÁC PHƯƠNG ÁN TRIỂN KHAI
+================================================================================
+
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │            │ Win thuần │ WSL2 thủ công │ WSL2 + Docker │            │
+  │ Cài ban đầu│  2-3h    │   1.5-2.5h    │   15-20 phút  │ ★★★★★    │
+  │ Chuyển máy │ Làm lại  │   Làm lại     │ Copy+1 lệnh   │ ★★★★★    │
+  │ Cập nhật   │  5 bước  │   1 script    │ 2-3 lệnh      │ ★★★★     │
+  │ PostgreSQL │ Cài thêm │   Cài thêm    │ Có sẵn         │ ★★★★★    │
+  │ Debug log  │  Khó     │   journalctl  │ docker logs    │ ★★★★     │
+  │ Backup DB  │ Copy file│   Copy file   │ pg_dump 1 lệnh │ ★★★★★   │
+  └──────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+  THỨ TỰ THỰC HIỆN
+================================================================================
+
+  === TRÊN MÁY DEV — ĐẨY CODE LÊN GIT (5 phút) ===
+  ☐  0a. cd D:\myproject\ERP_HRM_New\ERP
+  ☐  0b. git init → git add . → git commit -m "Initial commit"
+  ☐  0c. Tạo repo trên GitHub → git remote add origin <URL>
+  ☐  0d. git push -u origin main
+
+  === TRÊN WINDOWS MÁY CHỦ (10 phút) ===
+  ☐  1. PowerShell Admin → wsl --install → Restart
+  ☐  2. Cài Docker Desktop → Bật WSL Integration
+  ☐  3. Đặt IP tĩnh 192.168.1.100 cho máy chủ
+
+  === TRONG UBUNTU MÁY CHỦ (10-15 phút) ===
+  ☐  4. Cài Git: sudo apt install git -y
+  ☐  5. SSH key: ssh-keygen → thêm vào GitHub
+  ☐  6. Clone code: git clone git@github.com:ORG/erp.git /opt/erp
+  ☐  7. Tạo .env: cp deploy/.env.docker.example .env → nano .env
+  ☐  8. docker compose build                          (5-10 phút lần đầu)
+  ☐  9. docker compose up -d
+  ☐ 10. docker compose exec backend python manage.py migrate
+  ☐ 11. docker compose exec backend python manage.py collectstatic --noinput
+  ☐ 12. docker compose exec -it backend python manage.py createsuperuser
+  ☐ 13. http://localhost → OK
+
+  === PORT FORWARDING (5 phút) ===
+  ☐ 14. Copy erp-portforward.ps1 → C:\erp-portforward.ps1
+  ☐ 15. Chạy → http://192.168.1.100 từ LAN → OK
+  ☐ 16. Task Scheduler tự chạy khi boot
+
+  === CLOUDFLARE TUNNEL (10 phút) ===
+  ☐ 17. cloudflared tunnel login + create + route dns
+  ☐ 18. Tạo config.yml + thêm service vào docker-compose
+  ☐ 19. docker compose up -d → https://erp.congty.com → OK
+
+  === AUTO DEPLOY — Chọn 1 trong 2 (5 phút) ===
+  ☐ 20a. CÁCH 1 (Webhook): Cài erp-webhook.service + GitHub webhook
+  ☐ 20b. CÁCH 2 (Crontab): crontab -e → thêm git-poll-deploy.sh
+
+  === MÁY CHẤM CÔNG (2 phút) ===
+  ☐ 21. Cloud Server: IP=192.168.1.100, Port=80
+  ☐ 22. Quẹt tay → Data lên web → DONE!
+
+  === TEST AUTO DEPLOY ===
+  ☐ 23. Máy dev: sửa 1 dòng → git push
+  ☐ 24. Đợi 1-3 phút → kiểm tra máy chủ đã cập nhật
+
+  Tổng thời gian: ~40-50 phút (gồm cả setup Git + auto deploy)
+
+================================================================================
+  KHI CHUYỂN SANG MÁY CHỦ MỚI
+================================================================================
+
+  Chỉ cần 5 bước:
+    1. Cài WSL 2 + Docker Desktop trên máy mới
+    2. Cài Git: sudo apt install git -y
+    3. git clone git@github.com:YOUR_ORG/erp-system.git /opt/erp
+    4. cp deploy/.env.docker.example .env → sửa .env
+    5. docker compose up -d --build
+    6. Import backup: docker compose exec -T db psql -U erp erp < backup.sql
+
+  → Xong. Không cần cài Python, Node, Nginx, PostgreSQL.
+  → Auto deploy: chỉ cần thêm crontab hoặc webhook (Phần 8).
+
+================================================================================
+  END OF DOCUMENT
+================================================================================

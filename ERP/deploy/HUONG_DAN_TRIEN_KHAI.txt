@@ -1,0 +1,483 @@
+================================================================================
+  HƯỚNG DẪN TRIỂN KHAI HỆ THỐNG ERP + MÁY CHẤM CÔNG
+  Ngày tạo: 2026-04-06
+================================================================================
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  MỤC LỤC                                                                    ║
+║  1. PHÂN TÍCH STACK KỸ THUẬT                                                ║
+║  2. MÁY CHỦ CẦN CÀI ĐẶT GÌ                                               ║
+║  3. CÁC BƯỚC TRIỂN KHAI CHI TIẾT                                            ║
+║  4. CẤU HÌNH DOMAIN + TRUY CẬP TỪ XA                                       ║
+║  5. QUY TRÌNH CHỈNH SỬA CODE SAU KHI DEPLOY                                ║
+║  6. SƠ ĐỒ KIẾN TRÚC                                                         ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+
+================================================================================
+1. PHÂN TÍCH STACK KỸ THUẬT CỦA DỰ ÁN
+================================================================================
+
+  Backend:
+    - Python 3.14 + Django 6.0.3 + Django REST Framework
+    - Daphne (ASGI server) - hỗ trợ HTTP + WebSocket
+    - Django Channels (WebSocket cho chấm công realtime)
+    - JWT Authentication (SimpleJWT)
+    - Database: SQLite (hiện tại) → Khuyến nghị chuyển PostgreSQL cho production
+    - ZKTeco device integration (ADMS protocol)
+
+  Frontend:
+    - React 19 + Vite 8
+    - Ant Design 6 (UI components)
+    - Redux Toolkit (state management)
+    - Build ra static files (HTML/CSS/JS) → Nginx phục vụ
+
+  Các service phụ trợ (đã có trong requirements nhưng chưa cấu hình):
+    - Celery + Redis (task queue - sẵn sàng khi cần)
+    - Channels dùng InMemoryChannelLayer (đủ cho quy mô nhỏ-vừa)
+
+
+================================================================================
+2. MÁY CHỦ CẦN CÀI ĐẶT GÌ
+================================================================================
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │  HỆ ĐIỀU HÀNH: Windows Server hoặc Ubuntu Server (khuyến nghị Ubuntu) │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  A. PHẦN MỀM BẮT BUỘC:
+  ────────────────────────
+  1. Python 3.12+            → Chạy backend Django
+  2. Node.js 20+             → Build frontend (chỉ cần 1 lần)
+  3. Nginx                   → Reverse proxy, phục vụ static files
+  4. Git                     → Quản lý & cập nhật code
+
+  B. PHẦN MỀM KHUYẾN NGHỊ (không bắt buộc ngay):
+  ─────────────────────────────────────────────────
+  5. PostgreSQL 16           → Thay SQLite cho production (nhiều user đồng thời)
+  6. Redis                   → Nếu dùng Celery/Channels Redis layer sau này
+  7. Certbot (Let's Encrypt) → SSL miễn phí nếu có domain public
+
+  C. CHO TRUY CẬP TỪ XA:
+  ────────────────────────
+  8. Cloudflare Tunnel       → Cách đơn giản nhất, KHÔNG cần mở port router
+     HOẶC
+  9. Port forwarding router  → Mở port 80/443 trỏ vào máy chủ local
+     + Domain trỏ về IP public (DDNS nếu IP động)
+
+
+================================================================================
+3. CÁC BƯỚC TRIỂN KHAI CHI TIẾT
+================================================================================
+
+──── BƯỚC 1: Chuẩn bị máy chủ (Ubuntu Server) ────
+
+  # Cập nhật hệ thống
+  sudo apt update && sudo apt upgrade -y
+
+  # Cài đặt các gói cần thiết
+  sudo apt install -y python3 python3-pip python3-venv \
+       nodejs npm nginx git ufw
+
+  # (Tùy chọn) Cài PostgreSQL
+  sudo apt install -y postgresql postgresql-contrib
+
+
+──── BƯỚC 2: Copy code sang máy chủ ────
+
+  # Cách 1: Dùng Git (khuyến nghị)
+  # Trên máy dev, push code lên Git repo (GitHub/GitLab):
+  cd "D:\myproject\ERP (COPY) du an erp + may cham cong\ERP (COPY)"
+  git init
+  git add .
+  git commit -m "Initial deploy"
+  git remote add origin https://github.com/your-org/erp-system.git
+  git push -u origin main
+
+  # Trên máy chủ:
+  cd /opt
+  sudo git clone https://github.com/your-org/erp-system.git erp
+  sudo chown -R $USER:$USER /opt/erp
+
+  # Cách 2: Copy thủ công (USB/SCP/ZIP)
+  # Nén thư mục ERP (COPY) → copy sang máy chủ → giải nén vào /opt/erp
+
+
+──── BƯỚC 3: Cài đặt Backend ────
+
+  cd /opt/erp/backend
+
+  # Tạo virtual environment
+  python3 -m venv venv
+  source venv/bin/activate
+
+  # Cài dependencies
+  pip install -r requirements.txt
+
+  # Tạo file .env cho production
+  cat > .env << 'EOF'
+  DEBUG=False
+  SECRET_KEY=thay-bang-key-ngau-nhien-dai-50-ky-tu
+  ALLOWED_HOSTS=erp.congty.com,192.168.1.100,localhost
+  ZK_DEVICE_IP=192.168.1.225
+  ZK_DEVICE_PORT=5005
+  ZK_DEVICE_TIMEOUT=10
+  ZK_DEVICE_PASSWORD=0
+  ZK_PROTOCOL=adms
+  EOF
+
+  # Migrate database
+  python manage.py migrate
+
+  # Thu thập static files
+  python manage.py collectstatic --noinput
+
+  # Tạo superuser (lần đầu)
+  python manage.py createsuperuser
+
+
+──── BƯỚC 4: Build Frontend ────
+
+  cd /opt/erp/frontend
+
+  # Cài dependencies
+  npm install
+
+  # Tạo file .env cho production
+  # VITE_API_BASE_URL trỏ về domain/IP máy chủ
+  echo "VITE_API_BASE_URL=https://erp.congty.com/api" > .env.production
+
+  # Build ra static files
+  npm run build
+  # → Kết quả nằm trong thư mục: /opt/erp/frontend/dist/
+
+
+──── BƯỚC 5: Cấu hình Daphne như service (systemd) ────
+
+  sudo nano /etc/systemd/system/erp-backend.service
+
+  ── Nội dung file ──
+  [Unit]
+  Description=ERP Backend (Daphne ASGI)
+  After=network.target
+
+  [Service]
+  User=www-data
+  Group=www-data
+  WorkingDirectory=/opt/erp/backend
+  Environment="PATH=/opt/erp/backend/venv/bin"
+  ExecStart=/opt/erp/backend/venv/bin/daphne \
+      -b 127.0.0.1 \
+      -p 8000 \
+      config.asgi:application
+  Restart=always
+  RestartSec=5
+
+  [Install]
+  WantedBy=multi-user.target
+  ── Kết thúc file ──
+
+  # Kích hoạt service
+  sudo systemctl daemon-reload
+  sudo systemctl enable erp-backend
+  sudo systemctl start erp-backend
+
+  # Kiểm tra trạng thái
+  sudo systemctl status erp-backend
+
+
+──── BƯỚC 6: Cấu hình Nginx ────
+
+  sudo nano /etc/nginx/sites-available/erp
+
+  ── Nội dung file ──
+  server {
+      listen 80;
+      server_name erp.congty.com;       # Thay bằng domain thực tế
+
+      # Frontend (React build)
+      root /opt/erp/frontend/dist;
+      index index.html;
+
+      # SPA: mọi route frontend trả về index.html
+      location / {
+          try_files $uri $uri/ /index.html;
+      }
+
+      # API Backend
+      location /api/ {
+          proxy_pass http://127.0.0.1:8000;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+      }
+
+      # Django Admin
+      location /admin/ {
+          proxy_pass http://127.0.0.1:8000;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+      }
+
+      # WebSocket (attendance realtime)
+      location /ws/ {
+          proxy_pass http://127.0.0.1:8000;
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection "upgrade";
+          proxy_set_header Host $host;
+      }
+
+      # Django Static files
+      location /static/ {
+          alias /opt/erp/backend/staticfiles/;
+      }
+
+      # Media files
+      location /media/ {
+          alias /opt/erp/backend/media/;
+      }
+
+      # File upload limit
+      client_max_body_size 20M;
+  }
+  ── Kết thúc file ──
+
+  # Kích hoạt site
+  sudo ln -s /etc/nginx/sites-available/erp /etc/nginx/sites-enabled/
+  sudo rm /etc/nginx/sites-enabled/default
+  sudo nginx -t
+  sudo systemctl reload nginx
+
+
+================================================================================
+4. CẤU HÌNH DOMAIN + TRUY CẬP TỪ XA
+================================================================================
+
+  Có 3 phương án, xếp theo độ khuyến nghị:
+
+  ╔════════════════════════════════════════════════════════════════════════╗
+  ║  PHƯƠNG ÁN A: CLOUDFLARE TUNNEL (Khuyến nghị nhất)                   ║
+  ║  Ưu điểm: Không cần mở port, có SSL tự động, bảo mật cao            ║
+  ╚════════════════════════════════════════════════════════════════════════╝
+
+  Bước 1: Mua domain (VD: congty.com) → Trỏ DNS về Cloudflare
+  Bước 2: Cài Cloudflare Tunnel trên máy chủ:
+
+    # Cài cloudflared
+    curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o cloudflared.deb
+    sudo dpkg -i cloudflared.deb
+
+    # Đăng nhập Cloudflare
+    cloudflared tunnel login
+
+    # Tạo tunnel
+    cloudflared tunnel create erp-tunnel
+
+    # Cấu hình tunnel
+    cat > ~/.cloudflared/config.yml << EOF
+    tunnel: <TUNNEL_ID>
+    credentials-file: /home/$USER/.cloudflared/<TUNNEL_ID>.json
+    ingress:
+      - hostname: erp.congty.com
+        service: http://localhost:80
+      - service: http_status:404
+    EOF
+
+    # Tạo DNS record
+    cloudflared tunnel route dns erp-tunnel erp.congty.com
+
+    # Chạy tunnel như service
+    sudo cloudflared service install
+    sudo systemctl start cloudflared
+
+  → Kết quả: Mọi người truy cập https://erp.congty.com từ bất kỳ đâu!
+
+
+  ╔════════════════════════════════════════════════════════════════════════╗
+  ║  PHƯƠNG ÁN B: PORT FORWARDING + DDNS                                 ║
+  ║  Ưu điểm: Không mất phí tunnel. Nhược: cần truy cập router           ║
+  ╚════════════════════════════════════════════════════════════════════════╝
+
+  Bước 1: Mua domain (hoặc dùng DDNS miễn phí như DuckDNS)
+  Bước 2: Trên router, forward port 80 & 443 → IP máy chủ local (VD: 192.168.1.100)
+  Bước 3: Trỏ domain A record → IP public của mạng công ty
+  Bước 4: Cài SSL bằng Certbot:
+    sudo apt install certbot python3-certbot-nginx
+    sudo certbot --nginx -d erp.congty.com
+
+
+  ╔════════════════════════════════════════════════════════════════════════╗
+  ║  PHƯƠNG ÁN C: VPN (Nội bộ + từ xa qua VPN)                           ║
+  ║  Ưu điểm: Bảo mật tối đa. Nhược: mỗi user phải cài VPN client       ║
+  ╚════════════════════════════════════════════════════════════════════════╝
+
+  - Cài WireGuard hoặc Tailscale trên máy chủ
+  - Mỗi thành viên cài VPN client → truy cập qua IP nội bộ
+  - Phù hợp nếu yêu cầu bảo mật cao, không muốn expose ra internet
+
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │  TRUY CẬP NỘI BỘ (LAN) - Luôn hoạt động song song                   │
+  │                                                                         │
+  │  Thành viên trong cùng mạng LAN luôn truy cập được qua:               │
+  │  http://192.168.1.100  (IP máy chủ)                                    │
+  │  hoặc http://erp.congty.com (nếu đã cấu hình DNS)                     │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+5. QUY TRÌNH CHỈNH SỬA CODE SAU KHI DEPLOY
+================================================================================
+
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │        MÁY DEV (PC của bạn)           MÁY CHỦ (Server)            │
+  │                                                                      │
+  │   VS Code chỉnh code                                                │
+  │         │                                                            │
+  │         ▼                                                            │
+  │   git add + commit + push  ──────→  git pull                        │
+  │                                         │                            │
+  │                                   Chạy lệnh deploy                  │
+  │                                         │                            │
+  │                                   Service tự restart                │
+  └──────────────────────────────────────────────────────────────────────┘
+
+  A. KHI SỬA BACKEND (Python/Django):
+  ────────────────────────────────────
+  # Trên máy dev:
+  git add .
+  git commit -m "fix: sửa lỗi ABC"
+  git push origin main
+
+  # Trên máy chủ (SSH vào):
+  cd /opt/erp
+  git pull origin main
+  cd backend
+  source venv/bin/activate
+  pip install -r requirements.txt       # (nếu thêm package mới)
+  python manage.py migrate              # (nếu có migration mới)
+  python manage.py collectstatic --noinput
+  sudo systemctl restart erp-backend    # Restart backend
+
+  B. KHI SỬA FRONTEND (React):
+  ─────────────────────────────
+  # Trên máy dev:
+  git add .
+  git commit -m "feat: thêm trang XYZ"
+  git push origin main
+
+  # Trên máy chủ:
+  cd /opt/erp
+  git pull origin main
+  cd frontend
+  npm install                            # (nếu thêm package mới)
+  npm run build                          # Build lại frontend
+  # → Nginx tự phục vụ file mới, KHÔNG cần restart
+
+  C. TẠO SCRIPT TỰ ĐỘNG (Khuyến nghị):
+  ──────────────────────────────────────
+  Tạo file /opt/erp/deploy.sh:
+
+    #!/bin/bash
+    set -e
+    cd /opt/erp
+    echo ">>> Pulling latest code..."
+    git pull origin main
+
+    echo ">>> Updating backend..."
+    cd backend
+    source venv/bin/activate
+    pip install -r requirements.txt
+    python manage.py migrate
+    python manage.py collectstatic --noinput
+
+    echo ">>> Building frontend..."
+    cd ../frontend
+    npm install
+    npm run build
+
+    echo ">>> Restarting services..."
+    sudo systemctl restart erp-backend
+
+    echo ">>> Deploy complete!"
+
+  # Cấp quyền chạy:
+  chmod +x /opt/erp/deploy.sh
+
+  # Mỗi lần deploy chỉ cần:
+  ssh user@server "/opt/erp/deploy.sh"
+
+
+================================================================================
+6. SƠ ĐỒ KIẾN TRÚC TRIỂN KHAI
+================================================================================
+
+  Internet / LAN
+       │
+       ▼
+  ┌──────────────┐
+  │   Domain      │  erp.congty.com
+  │   (Cloudflare │  hoặc DNS trực tiếp
+  │    / DNS)     │
+  └──────┬───────┘
+         │
+         ▼
+  ┌──────────────┐     ┌─────────────────────────────────────┐
+  │              │     │ MÁY CHỦ LOCAL (192.168.1.100)       │
+  │              │     │                                       │
+  │   Nginx      │────→│  :80/443  Nginx                      │
+  │   (port 80)  │     │    ├── /           → Frontend (dist/) │
+  │              │     │    ├── /api/       → Daphne :8000     │
+  │              │     │    ├── /ws/        → Daphne :8000     │
+  │              │     │    ├── /admin/     → Daphne :8000     │
+  │              │     │    ├── /static/    → staticfiles/     │
+  │              │     │    └── /media/     → media/           │
+  │              │     │                                       │
+  │              │     │  Daphne (ASGI) :8000                  │
+  │              │     │    ├── Django REST API                │
+  │              │     │    ├── Django Channels (WebSocket)    │
+  │              │     │    └── Django Admin                   │
+  │              │     │                                       │
+  │              │     │  SQLite / PostgreSQL                  │
+  │              │     │                                       │
+  │              │     │  ZKTeco máy chấm công (LAN)          │
+  │              │     │    └── ADMS protocol :5005            │
+  └──────────────┘     └─────────────────────────────────────┘
+
+
+================================================================================
+  LƯU Ý QUAN TRỌNG
+================================================================================
+
+  1. BẢO MẬT PRODUCTION:
+     - Đổi SECRET_KEY trong .env (dùng: python -c "import secrets; print(secrets.token_urlsafe(50))")
+     - Đặt DEBUG=False
+     - Thêm STATIC_ROOT = BASE_DIR / 'staticfiles' vào settings.py
+     - Thu hẹp ALLOWED_HOSTS chỉ domain thật
+     - Bật HTTPS (SSL)
+
+  2. DATABASE:
+     - SQLite đủ dùng cho < 10-20 user đồng thời
+     - Nếu > 20 user hoặc cần backup dễ hơn → chuyển PostgreSQL
+     - Nhớ backup db.sqlite3 định kỳ (hoặc pg_dump nếu dùng PostgreSQL)
+
+  3. FRONTEND API URL:
+     - File frontend/src/services/api.js đọc biến VITE_API_BASE_URL
+     - Khi build, tạo file .env.production với URL đúng của server
+     - VD: VITE_API_BASE_URL=https://erp.congty.com/api
+
+  4. MÁY CHẤM CÔNG ZKTECO:
+     - Máy chấm công phải cùng mạng LAN với máy chủ
+     - Cấu hình IP máy chấm công trong .env (ZK_DEVICE_IP)
+
+  5. NẾU DÙNG WINDOWS SERVER:
+     - Dùng NSSM (Non-Sucking Service Manager) thay systemd
+     - Hoặc chạy Daphne trong Task Scheduler
+     - Nginx for Windows: https://nginx.org/en/docs/windows.html
+     - Quy trình tương tự, chỉ khác cách tạo service
+
+================================================================================
+  END OF DOCUMENT
+================================================================================

@@ -1,0 +1,28 @@
+# ============================================================
+# ERP Auto-Deploy Webhook — systemd service
+# Lắng nghe webhook từ GitHub/Gitea → tự động deploy
+#
+# Cài đặt:
+#   sudo cp /opt/erp/deploy/erp-webhook.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now erp-webhook
+# ============================================================
+[Unit]
+Description=ERP Webhook Auto-Deploy Server
+After=network.target docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/erp
+Environment=WEBHOOK_SECRET=THAY_BANG_SECRET_CUA_BAN
+ExecStart=/usr/bin/python3 /opt/erp/deploy/webhook-server.py
+Restart=always
+RestartSec=5
+
+# Logging
+StandardOutput=append:/opt/erp/deploy/webhook.log
+StandardError=append:/opt/erp/deploy/webhook.log
+
+[Install]
+WantedBy=multi-user.target

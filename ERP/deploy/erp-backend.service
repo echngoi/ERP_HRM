@@ -1,0 +1,23 @@
+[Unit]
+Description=ERP Backend (Daphne ASGI Server)
+After=network.target
+
+[Service]
+Type=simple
+User=erp
+Group=erp
+WorkingDirectory=/opt/erp/backend
+Environment="PATH=/opt/erp/backend/venv/bin:/usr/bin"
+EnvironmentFile=/opt/erp/backend/.env
+ExecStart=/opt/erp/backend/venv/bin/daphne \
+    -b 127.0.0.1 \
+    -p 8000 \
+    --proxy-headers \
+    config.asgi:application
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

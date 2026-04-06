@@ -1,0 +1,66 @@
+# ============================================================
+# ERP System — Docker Compose
+# Backend (Daphne) + Frontend (Nginx) + PostgreSQL
+# ============================================================
+# Triển khai: docker compose up -d
+# Lần đầu:   docker compose up -d --build
+# ============================================================
+
+services:
+
+  # ── PostgreSQL Database ──
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-erp}
+      POSTGRES_USER: ${DB_USER:-erp}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-erp_secret_2026}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-erp}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Backend: Django + Daphne (ASGI) ──
+  backend:
+    build: ./backend
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - DB_ENGINE=django.db.backends.postgresql
+      - DB_HOST=db
+      - DB_PORT=5432
+    volumes:
+      - static_files:/app/staticfiles
+      - media_files:/app/media
+      - ./backend/db.sqlite3:/app/db.sqlite3.bak:ro   # backup ref
+    ports:
+      - "8000:8000"    # Truy cập trực tiếp backend (debug) — bỏ được
+
+  # ── Frontend: React (Nginx) ──
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: /api
+        VITE_WS_URL: ""
+    restart: always
+    depends_on:
+      - backend
+    volumes:
+      - static_files:/app/staticfiles:ro
+      - media_files:/app/media:ro
+    ports:
+      - "80:80"
+
+volumes:
+  pgdata:          # PostgreSQL data — persistent
+  static_files:    # Django collectstatic output
+  media_files:     # Uploaded files
