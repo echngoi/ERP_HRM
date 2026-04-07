@@ -233,31 +233,235 @@ PHẦN 3 — BUILD VÀ CHẠY (CHỈ 3 LỆNH)
 PHẦN 4 — PORT FORWARDING (WINDOWS → WSL)
 ================================================================================
 
-  Giống như hướng dẫn WSL 2 thủ công — cần script port forward để máy
-  chấm công và LAN truy cập được.
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │  TẠI SAO PHẢI LÀM PORT FORWARDING?                                     │
+  │                                                                          │
+  │  WSL 2 KHÔNG phải "chạy trong Windows" theo nghĩa thông thường.        │
+  │  WSL 2 là một máy ảo Linux thật sự, có card mạng ảo riêng,            │
+  │  địa chỉ IP riêng — hoàn toàn biệt lập với Windows.                   │
+  │                                                                          │
+  │  Kết quả:                                                               │
+  │    • Docker container lắng nghe port 80 tại IP của WSL2                │
+  │      (ví dụ: 172.22.144.x — IP private, chỉ Windows thấy được)        │
+  │    • Máy tính trong LAN, máy chấm công chỉ biết IP Windows             │
+  │      (ví dụ: 192.168.1.100) — KHÔNG biết IP WSL2 là gì                │
+  │    • Khi máy chấm công gửi request đến 192.168.1.100:80               │
+  │      → Windows nhận được nhưng KHÔNG BIẾT chuyển đi đâu               │
+  │      → Request bị bỏ qua → Máy chấm công không kết nối được           │
+  │                                                                          │
+  │  Giải pháp: "Port Forward" = dặn Windows:                              │
+  │    "Khi có ai gửi đến 192.168.1.100:80, hãy chuyển tiếp sang          │
+  │     địa chỉ WSL2 (172.22.144.x:80) cho tôi"                           │
+  └──────────────────────────────────────────────────────────────────────────┘
 
-  ── 4.1 Tạo script ──
+  ── LUỒNG DỮ LIỆU THỰC TẾ ──
 
-  Tạo file C:\erp-portforward.ps1 (đã có sẵn trong deploy/erp-portforward.ps1)
-  Copy từ: \\wsl$\Ubuntu-24.04\opt\erp\deploy\erp-portforward.ps1
-       → C:\erp-portforward.ps1
+  TRƯỚC KHI forward (LỖI):
+  ┌─────────────────┐              ┌──────────────────────────────────────┐
+  │  Máy chấm công  │  HTTP :80    │  WINDOWS (192.168.1.100)             │
+  │  192.168.1.225  │ ──────────→  │  ??? Không biết chuyển đi đâu       │
+  └─────────────────┘              │  → Request bị DROP                   │
+                                   └──────────────────────────────────────┘
 
-  ── 4.2 Chạy thử ──
+  SAU KHI forward (ĐÚNG):
+  ┌─────────────────┐   :80    ┌──────────────────┐   :80   ┌──────────────┐
+  │  Máy chấm công  │ ───────→ │  WINDOWS         │ ──────→ │  WSL2 Linux  │
+  │  192.168.1.225  │          │  192.168.1.100   │ portproxy│  172.22.x.x  │
+  │                 │          │  (netsh rule)    │         │  Docker :80  │
+  └─────────────────┘          └──────────────────┘         └──────────────┘
+
+  ┌─────────────────┐   :80    ┌──────────────────┐   :80   ┌──────────────┐
+  │  Nhân viên LAN  │ ───────→ │  WINDOWS         │ ──────→ │  WSL2 Linux  │
+  │  192.168.1.xxx  │          │  192.168.1.100   │         │  Docker :80  │
+  └─────────────────┘          └──────────────────┘         └──────────────┘
+
+  ── TẠI SAO IP WSL2 THAY ĐỔI MỖI LẦN KHỞI ĐỘNG? ──
+
+  WSL2 được cấp IP động mỗi khi Windows khởi động lại.
+  Lần trước: 172.22.144.10 → Lần này: 172.22.144.15 → Hoàn toàn khác!
+
+  Vì vậy rule port forward PHẢI được cập nhật lại mỗi khi máy khởi động.
+  → Script erp-portforward.ps1 tự động lấy IP WSL2 mới và cập nhật rule.
+  → Task Scheduler chạy script này mỗi lần Windows bật lên.
+
+
+  !! CẢNH BÁO — VẤN ĐỀ PORT 80 BỊ IIS/HTTP.SYS CHIẾM !!
+
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │  TRIỆU CHỨNG:                                                           │
+  │  Docker báo lỗi khi chạy "docker compose up -d":                       │
+  │    "ports are not available: exposing port TCP 0.0.0.0:80              │
+  │     /forwards/expose returned unexpected status: 500"                   │
+  │                                                                          │
+  │  NGUYÊN NHÂN:                                                           │
+  │  Windows có dịch vụ IIS (Internet Information Services) hoặc           │
+  │  HTTP.sys (dịch vụ nền Windows) đang chiếm cổng 80.                   │
+  │  PID 4 trong Task Manager = HTTP.sys (kernel driver của Windows)       │
+  │                                                                          │
+  │  KIỂM TRA (PowerShell Admin):                                          │
+  │    netstat -ano | findstr ":80 " | findstr "LISTENING"                 │
+  │    → Nếu thấy PID 4 ở cột cuối = HTTP.sys đang chiếm port 80          │
+  │                                                                          │
+  │  CÁCH SỬA (PowerShell Admin):                                          │
+  │    # Dừng IIS (nếu có)                                                 │
+  │    Stop-Service -Name "W3SVC" -ErrorAction SilentlyContinue            │
+  │    Set-Service -Name "W3SVC" -StartupType Disabled                     │
+  │                                                                          │
+  │    # Dừng HTTP.sys (giải phóng port 80)                                │
+  │    net stop http /y                                                     │
+  │                                                                          │
+  │    # Kiểm tra lại (không còn PID 4 = đã xong)                         │
+  │    netstat -ano | findstr ":80 " | findstr "LISTENING"                 │
+  │                                                                          │
+  │    # Thử lại Docker                                                     │
+  │    (trong Ubuntu) docker compose up -d                                  │
+  │                                                                          │
+  │  LƯU Ý: Nếu IIS đang chạy website khác trên máy này,                 │
+  │  KHÔNG tắt IIS. Thay vào đó đổi port ERP sang 8080:                   │
+  │  → Sửa docker-compose.yml: ports: "8080:80"                            │
+  │  → Truy cập: http://192.168.1.100:8080                                 │
+  └──────────────────────────────────────────────────────────────────────────┘
+
+
+  ── 4.1 LẦN ĐẦU: Mở port 80 (giải phóng khỏi IIS/HTTP.sys) ──
+
+  Chạy PowerShell với quyền Admin:
+
+    # Bước 1: Kiểm tra ai chiếm port 80
+    netstat -ano | findstr ":80 " | findstr "LISTENING"
+
+    # Nếu có PID 4 → chạy tiếp:
+    # Bước 2: Tắt IIS
+    Stop-Service -Name "W3SVC" -ErrorAction SilentlyContinue
+    Set-Service -Name "W3SVC" -StartupType Disabled
+
+    # Bước 3: Giải phóng HTTP.sys
+    net stop http /y
+
+    # Bước 4: Kiểm tra lại → không còn PID nào trên :80
+    netstat -ano | findstr ":80 " | findstr "LISTENING"
+    → (kết quả trống = OK, port 80 đã trống)
+
+
+  ── 4.2 Copy script port forward ra ổ C ──
+
+  Mục đích: Script phải nằm ở vị trí cố định trên Windows để
+            Task Scheduler gọi được mỗi lần khởi động.
+
+  Mở PowerShell (Admin) hoặc File Explorer:
+
+    # Cách 1: Dùng PowerShell
+    Copy-Item "\\wsl$\Ubuntu-24.04\mnt\f\erp\deploy\erp-portforward.ps1" `
+              "C:\erp-portforward.ps1"
+
+    # Cách 2: Dùng File Explorer
+    Thanh địa chỉ gõ: \\wsl$\Ubuntu-24.04\mnt\f\erp\deploy\
+    Copy file "erp-portforward.ps1" → Paste vào C:\
+
+  !! Nếu clone vào /opt/erp thay vì /mnt/f/erp thì đường dẫn là:
+     \\wsl$\Ubuntu-24.04\opt\erp\deploy\erp-portforward.ps1
+
+
+  ── 4.3 Chạy thử lần đầu ──
 
   PowerShell (Admin):
+
+    # Cho phép chạy script PowerShell (chỉ cần làm 1 lần)
     Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+    # Chạy script
     C:\erp-portforward.ps1
 
-  ── 4.3 Đặt lịch Task Scheduler ──
+  Kết quả mong đợi:
+    WSL IP: 172.22.144.x
+    Port forwarding: 0.0.0.0:80 -> 172.22.144.x:80
+    Firewall rule added for port 80
+    === KIEM TRA ===
+    Listen on ipv4:             Connect to ipv4:
+    Address         Port        Address         Port
+    ------------------------    ------------------------
+    0.0.0.0         80          172.22.144.x    80
+    0.0.0.0         8000        172.22.144.x    8000
+    === HOAN TAT ===
 
-  Giống Phần 9 trong file TRIEN_KHAI_WSL2.txt:
-    Task Scheduler → Create Task:
-      Name: ERP Port Forward
-      Trigger: At startup, delay 30 seconds
-      Action: powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\erp-portforward.ps1"
-      Run with highest privileges: Yes
+  !! Nếu báo "lỗi Access Denied" → Chưa chạy PowerShell với quyền Admin
+  !! Click chuột phải vào PowerShell → "Run as administrator"
 
-  Kiểm tra từ máy LAN: http://192.168.1.100 → Trang login ERP
+
+  ── 4.4 Kiểm tra hoạt động ──
+
+  Sau khi chạy script:
+
+    # Từ chính máy chủ Windows (mở Chrome/Edge)
+    http://localhost             → Trang login ERP phải hiện ra
+
+    # Từ máy khác trong LAN
+    http://192.168.1.100         → Trang login ERP phải hiện ra
+
+    # Kiểm tra rule port forward (xem có chưa)
+    netsh interface portproxy show v4tov4
+
+  Nếu localhost hoạt động nhưng 192.168.1.100 không hoạt động
+  → Firewall Windows đang chặn → Kiểm tra:
+    netsh advfirewall firewall show rule name="WSL ERP Port 80"
+  → Thêm tay nếu rule chưa có:
+    netsh advfirewall firewall add rule name="WSL ERP Port 80" `
+        dir=in action=allow protocol=TCP localport=80
+
+
+  ── 4.5 Tự động chạy khi Windows khởi động (Task Scheduler) ──
+
+  Vì WSL2 IP thay đổi sau mỗi lần restart, script phải chạy lại mỗi lần boot.
+
+  Cách thiết lập Task Scheduler:
+
+    Bước 1: Mở Task Scheduler
+      → Nhấn Win+R → gõ "taskschd.msc" → OK
+
+    Bước 2: Create Task (KHÔNG dùng "Create Basic Task")
+      → Panel phải → "Create Task..."
+
+    Bước 3: Tab General
+      Name:    ERP Port Forward
+      ✓ Run with highest privileges   ← BẮT BUỘC (cần Admin)
+      Configure for: Windows 10/11
+
+    Bước 4: Tab Triggers → New
+      Begin the task: At startup
+      ✓ Delay task for: 30 seconds    ← Đợi WSL2 và Docker khởi động xong
+      → OK
+
+    Bước 5: Tab Actions → New
+      Action: Start a program
+      Program: powershell.exe
+      Arguments: -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\erp-portforward.ps1"
+      → OK
+
+    Bước 6: Tab Conditions
+      ✗ Bỏ tick "Start the task only if the computer is on AC power"
+        (nếu máy dùng pin/UPS thì để nguyên)
+
+    Bước 7: OK → Nhập mật khẩu Admin nếu được hỏi
+
+  Kiểm tra Task Scheduler hoạt động:
+    → Click chuột phải vào task "ERP Port Forward" → Run
+    → Đợi 5 giây → Mở Chrome → http://192.168.1.100 → Trang login
+
+
+  ── 4.6 Kiểm tra sau khi restart Windows ──
+
+  Sau khi restart máy chủ, đợi khoảng 1-2 phút rồi kiểm tra:
+
+    # Trong Ubuntu terminal:
+    docker compose ps                        → 3 containers: Up
+    curl http://localhost                    → HTML của trang login
+
+    # Từ máy LAN:
+    http://192.168.1.100                    → Trang login ERP
+
+    # Kiểm tra rule forward (Windows PowerShell):
+    netsh interface portproxy show v4tov4
+    → Phải thấy rule 0.0.0.0:80 → 172.22.x.x:80 (IP khác lần trước là bình thường)
 
 
 ================================================================================
@@ -646,6 +850,28 @@ PHẦN 12 — XỬ LÝ SỰ CỐ
   │ Hết dung lượng                 │ Dọn dẹp:                             │
   │                                │   docker system prune -f             │
   │                                │   docker image prune -a              │
+  │                                                                        │
+  │ Lỗi "ports are not available   │ IIS hoặc HTTP.sys đang chiếm port 80 │
+  │  exposing port TCP 0.0.0.0:80  │ Kiểm tra (PowerShell Admin):         │
+  │  unexpected status: 500"       │   netstat -ano | findstr ":80 "      │
+  │                                │         | findstr "LISTENING"         │
+  │                                │ → PID 4 = HTTP.sys. Xử lý:          │
+  │                                │   Stop-Service W3SVC -EA SilentlyCont│
+  │                                │   Set-Service W3SVC -StartupType Dis │
+  │                                │   net stop http /y                   │
+  │                                │ Sau đó thử lại: docker compose up -d │
+  │                                │ Xem chi tiết: PHẦN 4 mục !!CẢNH BÁO │
+  │                                                                        │
+  │ Port forward không hoạt động   │ 1. Script chưa chạy sau khi boot?   │
+  │  (LAN truy cập 192.168.1.100   │    PowerShell Admin: C:\erp-portforwa│
+  │   không được)                  │    rd.ps1                            │
+  │                                │ 2. IP WSL2 thay đổi sau restart:     │
+  │                                │    Chạy lại script → tự cập nhật IP │
+  │                                │ 3. Firewall chặn:                    │
+  │                                │    netsh advfirewall firewall show   │
+  │                                │    rule name="WSL ERP Port 80"       │
+  │                                │ 4. Docker chưa chạy trong WSL2:      │
+  │                                │    (Ubuntu) docker compose ps        │
   └────────────────────────────────────────────────────────────────────────┘
 
 
