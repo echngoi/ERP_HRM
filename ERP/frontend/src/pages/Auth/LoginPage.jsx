@@ -119,7 +119,7 @@ export default function LoginPage() {
             </Form.Item>
 
             <Form.Item name="remember" valuePropName="checked" className="login-remember">
-              <Checkbox>Remember me</Checkbox>
+              <Checkbox>Ghi nhớ đăng nhập</Checkbox>
             </Form.Item>
 
             <Button type="primary" htmlType="submit" block loading={loading}>
@@ -127,7 +127,7 @@ export default function LoginPage() {
             </Button>
 
             <div className="login-footer">
-              <Text type="secondary">Secure Sign-In for Internal Users</Text>
+              <Text type="secondary">Đăng nhập an toàn cho người dùng nội bộ</Text>
             </div>
           </Form>
         </Space>

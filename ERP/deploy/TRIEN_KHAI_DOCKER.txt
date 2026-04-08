@@ -486,26 +486,34 @@ PHẦN 5 — CLOUDFLARE TUNNEL (TRONG DOCKER)
     → Ghi nhớ TUNNEL_ID
 
     # Tạo DNS record
-    cloudflared tunnel route dns erp-tunnel erp.congty.com
+    cloudflared tunnel route dns erp-tunnel hrmgo.site
 
     # Copy credentials vào thư mục project
     mkdir -p /opt/erp/cloudflared
     cp ~/.cloudflared/*.json /opt/erp/cloudflared/
     cp ~/.cloudflared/cert.pem /opt/erp/cloudflared/
+    ---   tao ổ khác------
+    mkdir -p /mnt/f/erp/cloudflared
+    # Copy file chứng chỉ (cert.pem)
+    cp ~/.cloudflared/cert.pem /mnt/f/erp/cloudflared/
+
+    # Copy file mật mã (file .json chứa ID của tunnel)
+    cp ~/.cloudflared/*.json /mnt/f/erp/cloudflared/
 
   ── 5.2 Tạo config tunnel ──
 
     nano /opt/erp/cloudflared/config.yml
+    (nano /mnt/f/erp/cloudflared/config.yml)
 
     ── Nội dung ──
-    tunnel: <TUNNEL_ID>
-    credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
+    tunnel: 7ec5a414-807e-4845-ad3c-f1c8d59cbc66
+    credentials-file: /etc/cloudflared/7ec5a414-807e-4845-ad3c-f1c8d59cbc66.json
 
     ingress:
-      - hostname: erp.congty.com
+      - hostname: hrmgo.site
         service: http://frontend:80
         originRequest:
-          httpHostHeader: erp.congty.com
+          httpHostHeader: hrmgo.site
       - service: http_status:404
     ── Kết thúc ──
 
@@ -513,7 +521,7 @@ PHẦN 5 — CLOUDFLARE TUNNEL (TRONG DOCKER)
 
   Mở file /opt/erp/docker-compose.yml, thêm service cloudflared:
 
-    nano /opt/erp/docker-compose.yml
+    nano /mnt/f/erp/docker-compose.yml
 
   Thêm phần sau vào cuối block "services:" (trước "volumes:"):
 
@@ -546,7 +554,7 @@ PHẦN 6 — CẤU HÌNH MÁY CHẤM CÔNG
 
     ┌───────────────────────────────────────────────────┐
     │  Domain  : 192.168.1.100  ← IP Windows           │
-    │  Port    : 80                                      │
+    │  Port    : 8000                                      │
     │  Enable  : ON                                      │
     └───────────────────────────────────────────────────┘
 
