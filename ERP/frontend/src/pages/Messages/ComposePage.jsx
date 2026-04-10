@@ -204,8 +204,8 @@ export default function ComposeMessagePage() {
     <div className="compose-message-page">
       <Card className="compose-hero-card" bordered={false}>
         <Space direction="vertical" size={2}>
-          <Title level={4} style={{ margin: 0 }}>Soạn tin nhắn</Title>
-          <Text type="secondary">Gửi tin nhắn nội bộ nhanh chóng đến người dùng hoặc phòng ban</Text>
+          <Title level={4} style={{ margin: 0 }}>Soạn báo cáo nội bộ</Title>
+          <Text type="secondary">Gửi báo cáo nội bộ nhanh chóng đến người dùng hoặc phòng ban</Text>
         </Space>
       </Card>
 
@@ -224,7 +224,7 @@ export default function ComposeMessagePage() {
                   { max: SUBJECT_MAX_LENGTH, message: `Tiêu đề tối đa ${SUBJECT_MAX_LENGTH} ký tự` },
                 ]}
               >
-                <Input placeholder="Nhập tiêu đề tin nhắn" maxLength={SUBJECT_MAX_LENGTH} showCount />
+                <Input placeholder="Nhập tiêu đề báo cáo" maxLength={SUBJECT_MAX_LENGTH} showCount />
               </Form.Item>
 
               <Form.Item
@@ -235,7 +235,7 @@ export default function ComposeMessagePage() {
                   { min: 5, message: 'Nội dung tối thiểu 5 ký tự' },
                 ]}
               >
-                <Input.TextArea rows={10} placeholder="Nhập nội dung tin nhắn" showCount maxLength={5000} />
+                <Input.TextArea rows={10} placeholder="Nhập nội dung báo cáo" showCount maxLength={5000} />
               </Form.Item>
 
               <Divider style={{ margin: '12px 0 14px' }} />
@@ -314,7 +314,7 @@ export default function ComposeMessagePage() {
               </Card>
 
               <Card className="compose-card compose-side-card compose-tip-card" bordered={false}>
-                <Text strong>Lưu ý gửi tin</Text>
+                <Text strong>Lưu ý gửi báo cáo</Text>
                 <Text type="secondary" style={{ display: 'block', marginTop: 6 }}>
                   Hãy chọn ít nhất một người nhận hoặc một phòng ban trước khi gửi.
                 </Text>
@@ -327,7 +327,7 @@ export default function ComposeMessagePage() {
           <Space>
             <Button onClick={() => navigate('/inbox')}>Hủy</Button>
             <Button type="primary" htmlType="submit" icon={<SendOutlined />} loading={submitLoading}>
-              Gửi tin nhắn
+              Gửi báo cáo
             </Button>
           </Space>
         </Card>

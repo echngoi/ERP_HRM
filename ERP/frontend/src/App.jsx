@@ -146,7 +146,7 @@ function App() {
     {
       key: 'requests',
       icon: <FileTextOutlined />,
-      label: 'Yêu cầu',
+      label: 'Yêu cầu xử lý công việc',
     },
     {
       key: 'approvals',
@@ -156,7 +156,7 @@ function App() {
     {
       key: 'inbox',
       icon: <MailOutlined />,
-      label: 'Hộp thư',
+      label: 'Báo cáo nội bộ',
     },
     {
       key: 'attendance',

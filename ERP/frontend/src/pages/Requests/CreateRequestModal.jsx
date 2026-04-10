@@ -279,12 +279,12 @@ export default function CreateRequestModal({
 
                   return (
                     <Form.Item
-                      label="Workflow ID"
+                      label="Mẫu quy trình phê duyệt"
                       name="workflow"
                       rules={[
                         {
                           required: true,
-                          message: 'Vui lòng nhập workflow ID cho yêu cầu APPROVAL',
+                          message: 'Vui lòng nhập mẫu quy trình phê duyệt',
                         },
                       ]}
                     >
