@@ -146,7 +146,7 @@ function App() {
     {
       key: 'requests',
       icon: <FileTextOutlined />,
-      label: 'Yêu cầu xử lý công việc',
+      label: 'Yêu cầu xử lý',
     },
     {
       key: 'approvals',

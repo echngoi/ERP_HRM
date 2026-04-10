@@ -12,7 +12,32 @@ import dayjs from 'dayjs';
 
 const { Text, Title } = Typography;
 
-const WS_URL = (import.meta.env.VITE_WS_URL || 'ws://localhost:8000') + '/ws/attendance/';
+function buildAttendanceWsUrl() {
+  const envWsUrl = import.meta.env.VITE_WS_URL;
+  if (envWsUrl) {
+    try {
+      return new URL('/ws/attendance/', envWsUrl).toString();
+    } catch {
+      // Keep a safe fallback for malformed env values.
+    }
+  }
+
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+  if (apiBaseUrl) {
+    try {
+      const apiUrl = new URL(apiBaseUrl);
+      const wsProtocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${wsProtocol}//${apiUrl.host}/ws/attendance/`;
+    } catch {
+      // Continue with location-based fallback.
+    }
+  }
+
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${wsProtocol}//${window.location.host}/ws/attendance/`;
+}
+
+const WS_URL = buildAttendanceWsUrl();
 
 const PUNCH_COLORS = { 0: 'green', 1: 'red', 2: 'orange', 3: 'blue', 4: 'purple', 5: 'volcano' };
 const PUNCH_LABELS = { 0: 'Vào ca', 1: 'Ra ca', 2: 'Nghỉ giải lao', 3: 'Trở lại', 4: 'Tăng ca vào', 5: 'Tăng ca ra' };

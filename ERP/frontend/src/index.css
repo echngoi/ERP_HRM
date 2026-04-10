@@ -60,8 +60,20 @@ body {
   transition: all 0.2s ease;
 }
 
+.erp-app-menu .ant-menu-submenu-title,
+.erp-app-menu.ant-menu-light .ant-menu-submenu-title {
+  width: calc(100% - 18px);
+  margin-inline: 9px;
+  border-radius: 12px;
+  color: #e2ecfa;
+  transition: all 0.2s ease;
+}
+
 .erp-app-menu .ant-menu-item .ant-menu-title-content,
-.erp-app-menu .ant-menu-item .anticon {
+.erp-app-menu .ant-menu-item .anticon,
+.erp-app-menu .ant-menu-submenu-title .ant-menu-title-content,
+.erp-app-menu .ant-menu-submenu-title .anticon,
+.erp-app-menu .ant-menu-submenu-title .ant-menu-submenu-arrow {
   color: inherit;
 }
 
@@ -70,14 +82,32 @@ body {
   font-size: 15px;
 }
 
+.erp-app-menu .ant-menu-submenu-title .anticon {
+  color: #f1f6ff;
+  font-size: 15px;
+}
+
 .erp-app-menu .ant-menu-item:hover,
+.erp-app-menu .ant-menu-submenu-title:hover,
 .erp-app-menu.ant-menu-light .ant-menu-item:hover {
+  background: rgba(96, 165, 250, 0.14) !important;
+  color: #ffffff !important;
+}
+
+.erp-app-menu.ant-menu-light .ant-menu-submenu-title:hover {
   background: rgba(96, 165, 250, 0.14) !important;
   color: #ffffff !important;
 }
 
 .erp-app-menu .ant-menu-item-selected,
 .erp-app-menu.ant-menu-light .ant-menu-item-selected {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.32), rgba(96, 165, 250, 0.18)) !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.18);
+}
+
+.erp-app-menu .ant-menu-submenu-selected > .ant-menu-submenu-title,
+.erp-app-menu.ant-menu-light .ant-menu-submenu-selected > .ant-menu-submenu-title {
   background: linear-gradient(90deg, rgba(59, 130, 246, 0.32), rgba(96, 165, 250, 0.18)) !important;
   color: #ffffff !important;
   box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.18);
