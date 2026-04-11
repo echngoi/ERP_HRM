@@ -15,18 +15,63 @@ from rest_framework.decorators import api_view
 
 from .models import Employee, AttendanceLog, SyncLog, AttendancePermission, WorkShift, LateEarlyRule, PenaltyConfig
 from .serializers import EmployeeSerializer, AttendanceLogSerializer, SyncLogSerializer, AttendancePermissionSerializer, WorkShiftSerializer, LateEarlyRuleSerializer, PenaltyConfigSerializer
-from .permissions import get_allowed_pages, can_view_all_on_page
+from .permissions import (
+    get_allowed_pages,
+    can_view_all_on_page,
+    HasAttendancePageAccess,
+    HasAttendanceReportPageAccess,
+)
 from .zk_service import zk_service
-from users.permissions import IsAdmin
 
 logger = logging.getLogger(__name__)
 
 ALLOWED_DEVICE_COMMANDS = {'clearlog', 'reboot', 'getuser', 'getlog'}
 
 
+def _scope_attendance_logs_qs(user, page_key, qs):
+    """Giới hạn log chấm công theo nhân viên máy khi không có can_view_all."""
+    if can_view_all_on_page(user, page_key):
+        return qs
+    att_emp = getattr(user, 'attendance_employee', None)
+    if att_emp:
+        return qs.filter(user_id=str(att_emp.user_id))
+    return qs.none()
+
+
+def _require_device_write(request):
+    """Thao tác ghi lên thiết bị / đồng bộ — chỉ admin hoặc quyền device + xem tất cả."""
+    if can_view_all_on_page(request.user, 'device'):
+        return None
+    return Response(
+        {'detail': 'Thao tác này yêu cầu quyền "Thiết bị" kèm "xem tất cả nhân viên".'},
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
+def _require_can_view_all_employees(request):
+    """Gán ca, bật/tắt hàng loạt nhân viên máy — cần quyền employees + xem tất cả."""
+    if can_view_all_on_page(request.user, 'employees'):
+        return None
+    return Response(
+        {'detail': 'Thao tác này yêu cầu quyền "Nhân viên chấm công" kèm "xem tất cả nhân viên".'},
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
+def _require_can_view_all_shifts(request):
+    """Tạo/sửa ca, quy tắc, phạt — cần quyền shifts + xem tất cả."""
+    if can_view_all_on_page(request.user, 'shifts'):
+        return None
+    return Response(
+        {'detail': 'Thao tác này yêu cầu quyền "Quản lý ca" kèm "xem tất cả nhân viên".'},
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
 class DeviceStatusView(APIView):
     """Test connection to device."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'device'
 
     def get(self, request):
         result = zk_service.test_connection()
@@ -35,7 +80,8 @@ class DeviceStatusView(APIView):
 
 class DeviceTimeView(APIView):
     """Get/set device time."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'device'
 
     def get(self, request):
         try:
@@ -46,6 +92,9 @@ class DeviceTimeView(APIView):
 
     def post(self, request):
         """Sync device time with server."""
+        deny = _require_device_write(request)
+        if deny:
+            return deny
         try:
             zk_service.set_device_time()
             return Response({'message': 'Đồng bộ thời gian thành công'})
@@ -55,9 +104,13 @@ class DeviceTimeView(APIView):
 
 class DeviceRestartView(APIView):
     """Restart device."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'device'
 
     def post(self, request):
+        deny = _require_device_write(request)
+        if deny:
+            return deny
         try:
             zk_service.restart_device()
             return Response({'message': 'Đã gửi lệnh khởi động lại thiết bị'})
@@ -67,9 +120,13 @@ class DeviceRestartView(APIView):
 
 class DeviceCommandView(APIView):
     """Send command to device via WebSocket command queue."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'device'
 
     def post(self, request):
+        deny = _require_device_write(request)
+        if deny:
+            return deny
         from .zk_service import adms_enqueue_command, adms_get_last_contact
 
         cmd = request.data.get('command', '').strip()
@@ -110,9 +167,13 @@ class DeviceCommandView(APIView):
 
 class SyncUsersView(APIView):
     """Pull users from device and save to DB."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'device'
 
     def post(self, request):
+        deny = _require_device_write(request)
+        if deny:
+            return deny
         try:
             device_users = zk_service.get_users()
             created = 0
@@ -145,9 +206,13 @@ class SyncUsersView(APIView):
 
 class SyncAttendanceView(APIView):
     """Pull attendance records from device."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'device'
 
     def post(self, request):
+        deny = _require_device_write(request)
+        if deny:
+            return deny
         from .zk_service import ADMSService
 
         # ADMS mode: dữ liệu đã được push tự động vào DB, không cần sync thủ công
@@ -203,9 +268,13 @@ class SyncAttendanceView(APIView):
 
 class ClearAttendanceView(APIView):
     """Clear all attendance logs on device."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'device'
 
     def post(self, request):
+        deny = _require_device_write(request)
+        if deny:
+            return deny
         try:
             zk_service.clear_attendance()
             return Response({'message': 'Đã xóa toàn bộ dữ liệu chấm công trên thiết bị'})
@@ -215,13 +284,21 @@ class ClearAttendanceView(APIView):
 
 class EmployeeListView(APIView):
     """List all employees (from local DB)."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'employees'
 
     def get(self, request):
+        user = request.user
         employees = Employee.objects.select_related('linked_user__department', 'shift').all()
         # By default only return active; admin can pass ?show_all=1
         if not request.query_params.get('show_all'):
             employees = employees.filter(is_active=True)
+        if not can_view_all_on_page(user, 'employees'):
+            att_emp = getattr(user, 'attendance_employee', None)
+            if att_emp:
+                employees = employees.filter(pk=att_emp.pk)
+            else:
+                employees = employees.none()
         serializer = EmployeeSerializer(employees, many=True)
         return Response({'results': serializer.data, 'total': employees.count()})
 
@@ -229,11 +306,11 @@ class EmployeeListView(APIView):
 class AttendanceListView(APIView):
     """List attendance records with filters. Non-admin only sees own data unless granted."""
 
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'logs'
+
     def get(self, request):
         user = request.user
-        allowed = get_allowed_pages(user)
-        if 'logs' not in allowed:
-            return Response({'detail': 'Bạn không có quyền truy cập trang này.'}, status=status.HTTP_403_FORBIDDEN)
 
         qs = AttendanceLog.objects.select_related('employee__linked_user__department')
         if not can_view_all_on_page(user, 'logs'):
@@ -285,9 +362,11 @@ class AttendanceListView(APIView):
 
 class DashboardStatsView(APIView):
     """Dashboard statistics."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'dashboard'
 
     def get(self, request):
+        user = request.user
         now_local = timezone.localtime(timezone.now())
         today = now_local.date()
         week_start = today - timedelta(days=today.weekday())
@@ -298,24 +377,25 @@ class DashboardStatsView(APIView):
         today_start = timezone.make_aware(datetime.combine(today, _t.min))
         today_end = timezone.make_aware(datetime.combine(today, _t.max))
 
-        today_count = AttendanceLog.objects.filter(
-            timestamp__range=(today_start, today_end)
-        ).count()
+        log_base = AttendanceLog.objects.all()
+        log_base = _scope_attendance_logs_qs(user, 'dashboard', log_base)
+
+        today_count = log_base.filter(timestamp__range=(today_start, today_end)).count()
 
         week_start_dt = timezone.make_aware(datetime.combine(week_start, _t.min))
-        week_count = AttendanceLog.objects.filter(
-            timestamp__gte=week_start_dt
-        ).count()
+        week_count = log_base.filter(timestamp__gte=week_start_dt).count()
 
         month_start_dt = timezone.make_aware(datetime.combine(month_start, _t.min))
-        month_count = AttendanceLog.objects.filter(
-            timestamp__gte=month_start_dt
-        ).count()
+        month_count = log_base.filter(timestamp__gte=month_start_dt).count()
 
-        total_employees = Employee.objects.count()
+        if can_view_all_on_page(user, 'dashboard'):
+            total_employees = Employee.objects.count()
+        else:
+            att_emp = getattr(user, 'attendance_employee', None)
+            total_employees = 1 if att_emp else 0
 
         # Active today (checked in)
-        active_today = AttendanceLog.objects.filter(
+        active_today = log_base.filter(
             timestamp__range=(today_start, today_end),
             punch=0,
         ).values('user_id').distinct().count()
@@ -326,13 +406,18 @@ class DashboardStatsView(APIView):
             d = today - timedelta(days=i)
             d_start = timezone.make_aware(datetime.combine(d, _t.min))
             d_end = timezone.make_aware(datetime.combine(d, _t.max))
-            count = AttendanceLog.objects.filter(timestamp__range=(d_start, d_end)).count()
+            count = log_base.filter(timestamp__range=(d_start, d_end)).count()
             daily_stats.append({
                 'date': d.strftime('%d/%m'),
                 'count': count,
             })
 
-        last_sync = SyncLog.objects.filter(status='success').first()
+        last_sync = None
+        last_sync_str = None
+        if can_view_all_on_page(user, 'dashboard'):
+            last_sync = SyncLog.objects.filter(status='success').first()
+            if last_sync:
+                last_sync_str = timezone.localtime(last_sync.started_at).strftime('%Y-%m-%d %H:%M:%S')
 
         return Response({
             'today_checkins': today_count,
@@ -341,15 +426,18 @@ class DashboardStatsView(APIView):
             'total_employees': total_employees,
             'active_today': active_today,
             'daily_stats': daily_stats,
-            'last_sync': timezone.localtime(last_sync.started_at).strftime('%Y-%m-%d %H:%M:%S') if last_sync else None,
+            'last_sync': last_sync_str,
         })
 
 
 class SyncLogListView(APIView):
     """List sync history."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'device'
 
     def get(self, request):
+        if not can_view_all_on_page(request.user, 'device'):
+            return Response({'results': []})
         logs = SyncLog.objects.all()[:20]
         serializer = SyncLogSerializer(logs, many=True)
         return Response({'results': serializer.data})
@@ -357,12 +445,21 @@ class SyncLogListView(APIView):
 
 class LiveAttendanceView(APIView):
     """Fetch real-time attendance directly from device (no cache)."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'live'
 
     def get(self, request):
+        user = request.user
         try:
             records = zk_service.get_all_attendance()
             records.sort(key=lambda x: x['timestamp'] or '', reverse=True)
+            if not can_view_all_on_page(user, 'live'):
+                att_emp = getattr(user, 'attendance_employee', None)
+                uid = str(att_emp.user_id) if att_emp else None
+                if uid:
+                    records = [r for r in records if str(r.get('user_id')) == uid]
+                else:
+                    records = []
             return Response({
                 'records': records[:100],
                 'total': len(records),
@@ -373,7 +470,8 @@ class LiveAttendanceView(APIView):
 
 class DeviceProtocolView(APIView):
     """Trả về giao thức đang dùng và hướng dẫn cấu hình."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'device'
 
     def get(self, request):
         from .zk_service import ADMSService, ZKBinaryService
@@ -814,13 +912,13 @@ def _build_report_data(date_from, date_to, user_id=None):
 class AttendanceReportView(APIView):
     """Monthly/daily attendance report with summary."""
 
+    permission_classes = [HasAttendanceReportPageAccess]
+
     def get(self, request):
         user = request.user
-        allowed = get_allowed_pages(user)
-        # This view serves both 'report' and 'monthly' pages
         page_key = request.query_params.get('_page', 'report')
-        if page_key not in allowed:
-            return Response({'detail': 'Bạn không có quyền truy cập.'}, status=status.HTTP_403_FORBIDDEN)
+        if page_key not in ('report', 'monthly'):
+            page_key = 'report'
 
         date_from_str = request.query_params.get('date_from')
         date_to_str = request.query_params.get('date_to')
@@ -866,15 +964,16 @@ class AttendanceReportView(APIView):
 class AttendanceReportExportView(APIView):
     """Export attendance report to Excel."""
 
+    permission_classes = [HasAttendanceReportPageAccess]
+
     def get(self, request):
         import openpyxl
         from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
         user = request.user
-        allowed = get_allowed_pages(user)
         page_key = request.query_params.get('_page', 'report')
-        if page_key not in allowed:
-            return Response({'detail': 'Bạn không có quyền truy cập.'}, status=status.HTTP_403_FORBIDDEN)
+        if page_key not in ('report', 'monthly'):
+            page_key = 'report'
 
         date_from_str = request.query_params.get('date_from')
         date_to_str = request.query_params.get('date_to')
@@ -1277,11 +1376,12 @@ class AttendanceReportExportView(APIView):
         return response
 
 
-# ─── Attendance Permission Management (admin-only) ───────────────────
+# ─── Attendance Permission Management ───────────────────
 
 class AttendancePermissionListCreateView(APIView):
-    """List / create attendance permissions. Admin only."""
-    permission_classes = [IsAdmin]
+    """List / create attendance permissions (trang Phân quyền chấm công)."""
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'permissions'
 
     def get(self, request):
         qs = AttendancePermission.objects.select_related('user', 'department').order_by('-created_at')
@@ -1296,8 +1396,9 @@ class AttendancePermissionListCreateView(APIView):
 
 
 class AttendancePermissionDeleteView(APIView):
-    """Delete an attendance permission. Admin only."""
-    permission_classes = [IsAdmin]
+    """Delete an attendance permission."""
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'permissions'
 
     def delete(self, request, pk):
         try:
@@ -1309,9 +1410,10 @@ class AttendancePermissionDeleteView(APIView):
 
 
 class AttendancePermissionBulkCreateView(APIView):
-    """Create or update several attendance page grants in one request. Admin only."""
+    """Create or update several attendance page grants in one request."""
 
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'permissions'
 
     def post(self, request):
         user_id = request.data.get('user')
@@ -1383,8 +1485,9 @@ class MyAttendanceInfoView(APIView):
 
 
 class UserAttendanceEmployeeMappingView(APIView):
-    """Admin: map a User to an attendance.Employee by user_id on device."""
-    permission_classes = [IsAdmin]
+    """Map a User to an attendance.Employee by user_id on device (tab Liên kết)."""
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'permissions'
 
     def post(self, request):
         from users.models import User
@@ -1423,14 +1526,24 @@ class UserAttendanceEmployeeMappingView(APIView):
 
 
 class EmployeeToggleActiveView(APIView):
-    """Admin: toggle is_active on an attendance Employee."""
-    permission_classes = [IsAdmin]
+    """Toggle is_active on an attendance Employee."""
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'employees'
 
     def patch(self, request, pk):
         try:
             emp = Employee.objects.get(pk=pk)
         except Employee.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
+
+        user = request.user
+        if not can_view_all_on_page(user, 'employees'):
+            att_emp = getattr(user, 'attendance_employee', None)
+            if not att_emp or emp.pk != att_emp.pk:
+                return Response(
+                    {'detail': 'Chỉ được thay đổi trạng thái nhân viên chấm công của chính bạn.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
         is_active = request.data.get('is_active')
         if is_active is None:
@@ -1442,10 +1555,14 @@ class EmployeeToggleActiveView(APIView):
 
 
 class EmployeeBulkToggleActiveView(APIView):
-    """Admin: bulk set is_active for multiple employees."""
-    permission_classes = [IsAdmin]
+    """Bulk set is_active for multiple employees."""
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'employees'
 
     def patch(self, request):
+        deny = _require_can_view_all_employees(request)
+        if deny:
+            return deny
         ids = request.data.get('ids', [])
         is_active = request.data.get('is_active')
         if not ids or is_active is None:
@@ -1458,7 +1575,8 @@ class EmployeeBulkToggleActiveView(APIView):
 
 class WorkShiftListCreateView(APIView):
     """List / create work shifts."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'shifts'
 
     def get(self, request):
         shifts = WorkShift.objects.annotate(employee_count=Count('employees')).all()
@@ -1470,6 +1588,9 @@ class WorkShiftListCreateView(APIView):
         return Response(data)
 
     def post(self, request):
+        deny = _require_can_view_all_shifts(request)
+        if deny:
+            return deny
         serializer = WorkShiftSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -1478,7 +1599,8 @@ class WorkShiftListCreateView(APIView):
 
 class WorkShiftDetailView(APIView):
     """Retrieve / update / delete a work shift."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'shifts'
 
     def get_object(self, pk):
         try:
@@ -1493,6 +1615,9 @@ class WorkShiftDetailView(APIView):
         return Response(WorkShiftSerializer(obj).data)
 
     def put(self, request, pk):
+        deny = _require_can_view_all_shifts(request)
+        if deny:
+            return deny
         obj = self.get_object(pk)
         if not obj:
             return Response(status=status.HTTP_404_NOT_FOUND)
@@ -1502,6 +1627,9 @@ class WorkShiftDetailView(APIView):
         return Response(serializer.data)
 
     def delete(self, request, pk):
+        deny = _require_can_view_all_shifts(request)
+        if deny:
+            return deny
         obj = self.get_object(pk)
         if not obj:
             return Response(status=status.HTTP_404_NOT_FOUND)
@@ -1511,9 +1639,13 @@ class WorkShiftDetailView(APIView):
 
 class EmployeeAssignShiftView(APIView):
     """Assign a shift to one or multiple employees."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'employees'
 
     def patch(self, request):
+        deny = _require_can_view_all_employees(request)
+        if deny:
+            return deny
         ids = request.data.get('ids', [])
         shift_id = request.data.get('shift_id')  # null to clear
         if not ids:
@@ -1531,7 +1663,8 @@ class EmployeeAssignShiftView(APIView):
 
 class LateEarlyRuleListCreateView(APIView):
     """List/create late-early rules for a shift."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'shifts'
 
     def get(self, request):
         shift_id = request.query_params.get('shift_id')
@@ -1541,6 +1674,9 @@ class LateEarlyRuleListCreateView(APIView):
         return Response(LateEarlyRuleSerializer(qs, many=True).data)
 
     def post(self, request):
+        deny = _require_can_view_all_shifts(request)
+        if deny:
+            return deny
         serializer = LateEarlyRuleSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -1548,9 +1684,13 @@ class LateEarlyRuleListCreateView(APIView):
 
 
 class LateEarlyRuleDetailView(APIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'shifts'
 
     def put(self, request, pk):
+        deny = _require_can_view_all_shifts(request)
+        if deny:
+            return deny
         try:
             obj = LateEarlyRule.objects.get(pk=pk)
         except LateEarlyRule.DoesNotExist:
@@ -1561,6 +1701,9 @@ class LateEarlyRuleDetailView(APIView):
         return Response(serializer.data)
 
     def delete(self, request, pk):
+        deny = _require_can_view_all_shifts(request)
+        if deny:
+            return deny
         try:
             obj = LateEarlyRule.objects.get(pk=pk)
         except LateEarlyRule.DoesNotExist:
@@ -1571,9 +1714,13 @@ class LateEarlyRuleDetailView(APIView):
 
 class LateEarlyRuleBulkView(APIView):
     """Bulk save rules for a shift (replace all)."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'shifts'
 
     def post(self, request):
+        deny = _require_can_view_all_shifts(request)
+        if deny:
+            return deny
         shift_id = request.data.get('shift_id')
         rules = request.data.get('rules', [])
         if not shift_id:
@@ -1599,7 +1746,8 @@ class LateEarlyRuleBulkView(APIView):
 
 class PenaltyConfigListCreateView(APIView):
     """List/create penalty configs for a shift."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'shifts'
 
     def get(self, request):
         shift_id = request.query_params.get('shift_id')
@@ -1609,6 +1757,9 @@ class PenaltyConfigListCreateView(APIView):
         return Response(PenaltyConfigSerializer(qs, many=True).data)
 
     def post(self, request):
+        deny = _require_can_view_all_shifts(request)
+        if deny:
+            return deny
         serializer = PenaltyConfigSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -1616,9 +1767,13 @@ class PenaltyConfigListCreateView(APIView):
 
 
 class PenaltyConfigDetailView(APIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'shifts'
 
     def put(self, request, pk):
+        deny = _require_can_view_all_shifts(request)
+        if deny:
+            return deny
         try:
             obj = PenaltyConfig.objects.get(pk=pk)
         except PenaltyConfig.DoesNotExist:
@@ -1629,6 +1784,9 @@ class PenaltyConfigDetailView(APIView):
         return Response(serializer.data)
 
     def delete(self, request, pk):
+        deny = _require_can_view_all_shifts(request)
+        if deny:
+            return deny
         try:
             obj = PenaltyConfig.objects.get(pk=pk)
         except PenaltyConfig.DoesNotExist:
@@ -1639,9 +1797,13 @@ class PenaltyConfigDetailView(APIView):
 
 class PenaltyConfigBulkView(APIView):
     """Bulk save penalty configs for a shift (replace all)."""
-    permission_classes = [IsAdmin]
+    permission_classes = [HasAttendancePageAccess]
+    required_attendance_page = 'shifts'
 
     def post(self, request):
+        deny = _require_can_view_all_shifts(request)
+        if deny:
+            return deny
         shift_id = request.data.get('shift_id')
         configs = request.data.get('configs', [])
         if not shift_id:
