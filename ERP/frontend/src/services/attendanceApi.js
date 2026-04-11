@@ -37,6 +37,7 @@ export const exportAttendanceReport = (params) =>
 // ── Permissions ──────────────────────────────────────────
 export const getAttendancePermissions = () => api.get(`${ATTENDANCE_BASE}/permissions/`);
 export const createAttendancePermission = (data) => api.post(`${ATTENDANCE_BASE}/permissions/`, data);
+export const bulkAttendancePermissions = (data) => api.post(`${ATTENDANCE_BASE}/permissions/bulk/`, data);
 export const deleteAttendancePermission = (id) => api.delete(`${ATTENDANCE_BASE}/permissions/${id}/`);
 
 // ── My attendance info ───────────────────────────────────

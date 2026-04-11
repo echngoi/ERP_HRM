@@ -23,7 +23,10 @@ def _user_att_perms(user):
 def get_allowed_pages(user):
     """Return set of page keys the user may access."""
     if user_has_role(user, 'admin'):
-        return {'dashboard', 'live', 'logs', 'monthly', 'employees', 'report', 'device'}
+        return {
+            'dashboard', 'live', 'logs', 'monthly', 'employees', 'report', 'device',
+            'permissions', 'shifts',
+        }
 
     pages = {'monthly'}  # everyone can see monthly (own data)
     for perm in _user_att_perms(user):

@@ -334,18 +334,18 @@ export default function InboxPage() {
             className="inbox-compose-button"
             onClick={() => navigate('/messages/compose')}
           >
-            Soạn tin nhắn
+            Soạn báo cáo
           </Button>
         </Space>
 
         <div className="inbox-stat-row">
           <div className="inbox-stat-chip-wrap">
             <div className="inbox-stat-chip inbox-stat-chip-unread">
-              <span className="inbox-stat-chip__label">Tin chưa đọc</span>
+              <span className="inbox-stat-chip__label">Báo cáo chưa đọc</span>
               <span className="inbox-stat-chip__value inbox-stat-number-unread">{unreadCount}</span>
             </div>
             <div className="inbox-stat-chip inbox-stat-chip-today">
-              <span className="inbox-stat-chip__label">Tin trong hôm nay</span>
+              <span className="inbox-stat-chip__label">Báo cáo trong hôm nay</span>
               <span className="inbox-stat-chip__value inbox-stat-number-today">{inboxStats.todayCount}</span>
             </div>
           </div>
@@ -360,7 +360,7 @@ export default function InboxPage() {
           >
             <Radio.Button value="all">Tất cả</Radio.Button>
             <Radio.Button value="unread">Chưa đọc</Radio.Button>
-            <Radio.Button value="important">Tin quan trọng</Radio.Button>
+            <Radio.Button value="important">Quan trọng</Radio.Button>
           </Radio.Group>
 
           <Space wrap>
@@ -376,7 +376,7 @@ export default function InboxPage() {
 
         {keyword && (
           <Text type="secondary">
-            Hiển thị {inboxStats.visibleCount} / {items.length} tin nhắn theo bộ lọc tìm kiếm.
+            Hiển thị {inboxStats.visibleCount} / {items.length} báo cáo theo bộ lọc tìm kiếm.
           </Text>
         )}
 

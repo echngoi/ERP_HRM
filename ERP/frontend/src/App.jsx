@@ -170,8 +170,8 @@ function App() {
         ...(allowedPages.includes('employees') ? [{ key: 'attendance-employees', label: 'Nhân viên' }] : []),
         ...(allowedPages.includes('report') ? [{ key: 'attendance-report', label: 'Báo cáo chấm công' }] : []),
         ...(allowedPages.includes('device') ? [{ key: 'attendance-device', label: 'Thiết bị & Cài đặt' }] : []),
-        ...(isAdmin ? [{ key: 'attendance-permissions', label: 'Phân quyền chấm công' }] : []),
-        ...(isAdmin ? [{ key: 'attendance-shifts', label: 'Quản lý ca' }] : []),
+        ...(allowedPages.includes('permissions') ? [{ key: 'attendance-permissions', label: 'Phân quyền chấm công' }] : []),
+        ...(allowedPages.includes('shifts') ? [{ key: 'attendance-shifts', label: 'Quản lý ca' }] : []),
       ],
     },
     ...(user?.roles?.includes('admin')

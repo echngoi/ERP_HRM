@@ -1308,6 +1308,58 @@ class AttendancePermissionDeleteView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class AttendancePermissionBulkCreateView(APIView):
+    """Create or update several attendance page grants in one request. Admin only."""
+
+    permission_classes = [IsAdmin]
+
+    def post(self, request):
+        user_id = request.data.get('user')
+        department_id = request.data.get('department')
+        pages = request.data.get('pages')
+        can_view_all = bool(request.data.get('can_view_all', False))
+
+        if user_id is None and department_id is None:
+            return Response(
+                {'error': 'Phải chọn nhân viên hoặc phòng ban.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if user_id is not None and department_id is not None:
+            return Response(
+                {'error': 'Chỉ chọn một trong nhân viên hoặc phòng ban.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not isinstance(pages, list) or len(pages) == 0:
+            return Response(
+                {'error': 'Chọn ít nhất một trang.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        valid_pages = {c[0] for c in AttendancePermission.PAGE_CHOICES}
+        pages = [p for p in pages if p in valid_pages]
+        if not pages:
+            return Response(
+                {'error': 'Không có mã trang hợp lệ.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        touched = []
+        for page in pages:
+            obj, was_created = AttendancePermission.objects.get_or_create(
+                user_id=user_id,
+                department_id=department_id,
+                page=page,
+                defaults={'can_view_all': can_view_all},
+            )
+            if not was_created and obj.can_view_all != can_view_all:
+                obj.can_view_all = can_view_all
+                obj.save(update_fields=['can_view_all'])
+            touched.append(obj)
+
+        serializer = AttendancePermissionSerializer(touched, many=True)
+        return Response({'results': serializer.data}, status=status.HTTP_201_CREATED)
+
+
 class MyAttendanceInfoView(APIView):
     """Return the current user's attendance mapping & allowed pages."""
 

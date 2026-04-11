@@ -7,18 +7,27 @@ import {
   PlusOutlined, DeleteOutlined, UserOutlined, BankOutlined, SafetyOutlined, LinkOutlined,
 } from '@ant-design/icons';
 import {
-  getAttendancePermissions, createAttendancePermission, deleteAttendancePermission,
+  getAttendancePermissions, bulkAttendancePermissions, deleteAttendancePermission,
   getEmployees, updateEmployeeMapping,
 } from '../../services/attendanceApi';
 import api from '../../services/api';
 
 const { Title } = Typography;
 
+/** Khớp menu Chấm công trong App.jsx */
 const PAGE_OPTIONS = [
-  { value: 'monthly', label: 'Bảng công tháng' },
+  { value: 'dashboard', label: 'Tổng quan chấm công' },
+  { value: 'live', label: 'Giám sát trực tiếp' },
   { value: 'logs', label: 'Lịch sử chấm công' },
+  { value: 'monthly', label: 'Bảng chấm công tháng' },
+  { value: 'employees', label: 'Nhân viên chấm công' },
   { value: 'report', label: 'Báo cáo chấm công' },
+  { value: 'device', label: 'Thiết bị & Cài đặt' },
+  { value: 'permissions', label: 'Phân quyền chấm công' },
+  { value: 'shifts', label: 'Quản lý ca' },
 ];
+
+const ALL_PAGE_VALUES = PAGE_OPTIONS.map((o) => o.value);
 
 /* ── Attendance Permissions Tab ─────────────────────────── */
 function PermissionsTab() {
@@ -29,6 +38,7 @@ function PermissionsTab() {
   const [departments, setDepartments] = useState([]);
   const [form] = Form.useForm();
   const [grantType, setGrantType] = useState('user');
+  const [submitting, setSubmitting] = useState(false);
 
   const fetchPermissions = useCallback(async () => {
     setLoading(true);
@@ -58,8 +68,13 @@ function PermissionsTab() {
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
+      const pages = values.pages || [];
+      if (pages.length === 0) {
+        message.warning('Chọn ít nhất một trang trong menu Chấm công');
+        return;
+      }
       const payload = {
-        page: values.page,
+        pages,
         can_view_all: values.can_view_all || false,
       };
       if (grantType === 'user') {
@@ -67,15 +82,20 @@ function PermissionsTab() {
       } else {
         payload.department = values.department;
       }
-      await createAttendancePermission(payload);
-      message.success('Đã thêm phân quyền');
+      setSubmitting(true);
+      const res = await bulkAttendancePermissions(payload);
+      const n = res.data?.results?.length ?? pages.length;
+      message.success(`Đã phân quyền cho ${n} trang`);
       setModalOpen(false);
       form.resetFields();
       fetchPermissions();
     } catch (err) {
       if (err?.response?.data) {
-        message.error(JSON.stringify(err.response.data));
+        const d = err.response.data;
+        message.error(typeof d === 'string' ? d : (d.error || JSON.stringify(d)));
       }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -120,7 +140,7 @@ function PermissionsTab() {
     <>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
-          Thêm phân quyền
+          Phân thêm quyền
         </Button>
       </div>
       <Table
@@ -134,14 +154,15 @@ function PermissionsTab() {
       />
 
       <Modal
-        title="Thêm phân quyền chấm công"
+        title="Phân thêm quyền truy cập — Chấm công"
         open={modalOpen}
         onOk={handleCreate}
         onCancel={() => { setModalOpen(false); form.resetFields(); }}
-        okText="Thêm"
+        okText="Áp dụng"
         cancelText="Hủy"
+        confirmLoading={submitting}
       >
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" initialValues={{ pages: [] }}>
           <Form.Item label="Phân quyền cho">
             <Select value={grantType} onChange={setGrantType}
               options={[
@@ -163,10 +184,36 @@ function PermissionsTab() {
               />
             </Form.Item>
           )}
-          <Form.Item name="page" label="Trang được truy cập" rules={[{ required: true, message: 'Chọn trang' }]}>
-            <Select placeholder="Chọn trang" options={PAGE_OPTIONS} />
+          <Form.Item
+            name="pages"
+            label="Trang trong menu Chấm công"
+            rules={[
+              { required: true, message: 'Chọn ít nhất một trang' },
+              { type: 'array', min: 1, message: 'Chọn ít nhất một trang' },
+            ]}
+          >
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder="Chọn một hoặc nhiều trang"
+              options={PAGE_OPTIONS}
+              maxTagCount="responsive"
+              optionFilterProp="label"
+            />
           </Form.Item>
-          <Form.Item name="can_view_all" label="Cho phép xem tất cả nhân viên" valuePropName="checked">
+          <Form.Item>
+            <Space wrap>
+              <Button type="link" size="small" style={{ padding: 0 }}
+                onClick={() => form.setFieldsValue({ pages: [...ALL_PAGE_VALUES] })}>
+                Chọn tất cả trang Chấm công
+              </Button>
+              <Button type="link" size="small" style={{ padding: 0 }}
+                onClick={() => form.setFieldsValue({ pages: [] })}>
+                Bỏ chọn
+              </Button>
+            </Space>
+          </Form.Item>
+          <Form.Item name="can_view_all" label="Cho phép xem tất cả nhân viên (áp dụng cho các trang đã chọn)" valuePropName="checked">
             <Switch />
           </Form.Item>
         </Form>

@@ -35,6 +35,7 @@ urlpatterns = [
 
     # Attendance permissions
     path('permissions/',          views.AttendancePermissionListCreateView.as_view(), name='att-perm-list-create'),
+    path('permissions/bulk/',      views.AttendancePermissionBulkCreateView.as_view(), name='att-perm-bulk-create'),
     path('permissions/<int:pk>/', views.AttendancePermissionDeleteView.as_view(),     name='att-perm-delete'),
     path('my-info/',              views.MyAttendanceInfoView.as_view(),               name='att-my-info'),
     path('mapping/',              views.UserAttendanceEmployeeMappingView.as_view(),  name='att-mapping'),

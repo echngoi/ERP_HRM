@@ -141,9 +141,15 @@ class AttendancePermission(models.Model):
     If department is set (user is null), all members of that department get access.
     """
     PAGE_CHOICES = [
-        ('monthly', 'Bảng công tháng'),
+        ('dashboard', 'Tổng quan chấm công'),
+        ('live', 'Giám sát trực tiếp'),
         ('logs', 'Lịch sử chấm công'),
+        ('monthly', 'Bảng chấm công tháng'),
+        ('employees', 'Nhân viên chấm công'),
         ('report', 'Báo cáo chấm công'),
+        ('device', 'Thiết bị & Cài đặt'),
+        ('permissions', 'Phân quyền chấm công'),
+        ('shifts', 'Quản lý ca'),
     ]
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -171,6 +177,16 @@ class AttendancePermission(models.Model):
             models.CheckConstraint(
                 condition=~models.Q(user__isnull=True, department__isnull=True),
                 name='attendance_perm_user_or_dept',
+            ),
+            models.UniqueConstraint(
+                fields=('user', 'page'),
+                condition=models.Q(user__isnull=False),
+                name='attendance_perm_user_page_uniq',
+            ),
+            models.UniqueConstraint(
+                fields=('department', 'page'),
+                condition=models.Q(department__isnull=False),
+                name='attendance_perm_dept_page_uniq',
             ),
         ]
 
