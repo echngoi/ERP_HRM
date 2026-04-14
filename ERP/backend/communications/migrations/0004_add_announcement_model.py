@@ -34,11 +34,6 @@ class Migration(migrations.Migration):
                 'ordering': ['-priority', '-created_at'],
             },
         ),
-        migrations.RenameIndex(
-            model_name='messagerecipient',
-            new_name='message_rec_user_id_8e0a65_idx',
-            old_name='message_reci_user_id_5eca30_idx',
-        ),
         migrations.AddField(
             model_name='announcement',
             name='created_by',
