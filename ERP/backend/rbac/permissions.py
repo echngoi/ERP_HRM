@@ -4,15 +4,15 @@ from rbac.utils import user_has_permission
 
 
 class IsAdminUser(BasePermission):
-    """Allow access only if the user has the 'admin' role."""
+    """Allow access only if the user has the 'admin' role OR is a Django superuser."""
     message = "Admin role is required."
 
     def has_permission(self, request, view):
-        return (
-            request.user
-            and request.user.is_authenticated
-            and request.user.user_roles.filter(role__name='admin').exists()
-        )
+        if not (request.user and request.user.is_authenticated):
+            return False
+        if request.user.is_superuser:
+            return True
+        return request.user.user_roles.filter(role__name='admin').exists()
 
 
 def permission_required(code: str):
