@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.validators import RegexValidator
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
@@ -279,3 +280,64 @@ class MessageAttachment(models.Model):
 
 	def __str__(self) -> str:
 		return self.file_name or self.file_url
+
+
+hex_color_validator = RegexValidator(
+	regex=r'^#[0-9a-fA-F]{6}$',
+	message='Mã màu phải có dạng #RRGGBB',
+)
+
+
+class Announcement(models.Model):
+	content = models.TextField("Nội dung")
+	is_active = models.BooleanField("Đang hiển thị", default=True)
+	start_date = models.DateTimeField("Bắt đầu hiển thị", null=True, blank=True)
+	end_date = models.DateTimeField("Kết thúc hiển thị", null=True, blank=True)
+	font_family = models.CharField("Font chữ", max_length=100, default="inherit")
+	font_size = models.PositiveSmallIntegerField("Cỡ chữ (px)", default=14)
+	text_color = models.CharField("Màu chữ", max_length=7, default="#ffffff", validators=[hex_color_validator])
+	bg_color = models.CharField("Màu nền", max_length=7, default="#1677ff", validators=[hex_color_validator])
+	speed = models.PositiveSmallIntegerField("Tốc độ (giây)", default=20, help_text="Thời gian chạy hết 1 vòng")
+	priority = models.PositiveSmallIntegerField("Thứ tự ưu tiên", default=0)
+	created_by = models.ForeignKey(
+		settings.AUTH_USER_MODEL,
+		on_delete=models.SET_NULL,
+		null=True,
+		blank=True,
+		related_name="announcements",
+	)
+	created_at = models.DateTimeField(auto_now_add=True)
+	updated_at = models.DateTimeField(auto_now=True)
+
+	class Meta:
+		db_table = "announcements"
+		ordering = ["-priority", "-created_at"]
+
+	def __str__(self):
+		return self.content[:80]
+
+
+class FooterItem(models.Model):
+	class Section(models.TextChoices):
+		CONTACT = "CONTACT", "Thông tin liên hệ"
+		COPYRIGHT = "COPYRIGHT", "Bản quyền"
+		SOCIAL = "SOCIAL", "Mạng xã hội"
+		PARTNER = "PARTNER", "Đối tác"
+		CERTIFICATION = "CERTIFICATION", "Chứng nhận"
+
+	section = models.CharField("Phân loại", max_length=20, choices=Section.choices)
+	label = models.CharField("Nhãn", max_length=200)
+	value = models.TextField("Giá trị (URL/text)", blank=True, default="")
+	icon = models.CharField("Icon (tên Ant icon)", max_length=100, blank=True, default="")
+	image_url = models.URLField("Ảnh/Logo URL", max_length=500, blank=True, default="")
+	is_active = models.BooleanField("Hiển thị", default=True)
+	sort_order = models.PositiveSmallIntegerField("Thứ tự", default=0)
+	created_at = models.DateTimeField(auto_now_add=True)
+	updated_at = models.DateTimeField(auto_now=True)
+
+	class Meta:
+		db_table = "footer_items"
+		ordering = ["section", "sort_order", "id"]
+
+	def __str__(self):
+		return f"[{self.section}] {self.label}"

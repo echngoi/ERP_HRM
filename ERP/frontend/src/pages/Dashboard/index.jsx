@@ -16,6 +16,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import StatCard from './StatCard';
+import PullToRefresh from '../../components/PullToRefresh';
 import api from '../../services/api';
 import { getRecentRewards, getBirthdaysThisMonth } from '../../services/employeeApi';
 import dayjs from 'dayjs';
@@ -237,6 +238,29 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, []);
 
+  const handleRefresh = async () => {
+    setLoading(true);
+    try {
+      const [tr, trAll, ip, pa, aa, um] = await Promise.allSettled([
+        api.get('/requests/', { params: { type: 'TASK', created_today: '1' } }),
+        api.get('/requests/', { params: { type: 'TASK' } }),
+        api.get('/requests/', { params: { type: 'TASK', status: 'IN_PROGRESS' } }),
+        api.get('/approvals/', { params: { status: 'PENDING' } }),
+        api.get('/requests/', { params: { type: 'APPROVAL', status: 'APPROVED' } }),
+        api.get('/messages/inbox/', { params: { unread: true } }),
+      ]);
+      const gc = (r) => (r.status === 'fulfilled' ? getCount(r.value.data) : 0);
+      setStats({
+        totalRequests: { value: gc(tr), secondaryValue: gc(trAll) },
+        inProgress: { value: gc(ip) },
+        pendingApprovals: { value: gc(pa), secondaryValue: gc(aa) },
+        unreadMessages: { value: gc(um) },
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   /* ---------- Fetch rewards & birthdays ---------- */
   useEffect(() => {
     getRecentRewards(20)
@@ -319,32 +343,11 @@ export default function DashboardPage() {
   };
 
   return (
+    <PullToRefresh onRefresh={handleRefresh}>
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       <div className="dashboard-overview-heading">
         <Title level={4} style={{ margin: 0 }}>Tổng quan</Title>
         <Text type="secondary">Thống kê hoạt động trong hệ thống</Text>
-      </div>
-
-      <div className="dashboard-quick-actions">
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <div>
-            <Title level={5} style={{ margin: 0 }}>Thao tác nhanh</Title>
-            <Text type="secondary">Đi tới các khu vực thường dùng chỉ với một lần bấm</Text>
-          </div>
-
-          <Space wrap size={12}>
-            {quickActions.map((action) => (
-              <Button
-                key={action.key}
-                className="dashboard-quick-action-btn"
-                icon={action.icon}
-                onClick={action.onClick}
-              >
-                {action.label}
-              </Button>
-            ))}
-          </Space>
-        </Space>
       </div>
 
       {error && (
@@ -412,5 +415,6 @@ export default function DashboardPage() {
         />
       </div>
     </Space>
+    </PullToRefresh>
   );
 }

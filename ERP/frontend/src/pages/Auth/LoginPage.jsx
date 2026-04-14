@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Button,
   Card,
@@ -13,6 +13,7 @@ import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
+import { getSiteConfig } from '../../services/siteConfigApi';
 import companyLogo from '../../assets/company-logo.svg';
 import './LoginPage.css';
 
@@ -22,7 +23,21 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [logoUrl, setLogoUrl] = useState(companyLogo);
   const [form] = Form.useForm();
+
+  useEffect(() => {
+    getSiteConfig()
+      .then((res) => {
+        const loginLogo = res.data?.login_logo;
+        if (loginLogo?.image_url) {
+          setLogoUrl(loginLogo.image_url);
+        }
+      })
+      .catch(() => {
+        // Fallback to default logo silently
+      });
+  }, []);
 
   const rememberedUsername = localStorage.getItem('remembered_username') || '';
 
@@ -78,7 +93,7 @@ export default function LoginPage() {
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
           <div className="login-brand">
             <div className="login-brand-mark">
-              <img src={companyLogo} width="40" height="40" alt="Company logo" />
+              <img src={logoUrl} width="40" height="40" alt="Company logo" />
             </div>
             <div>
               <Title level={3} style={{ margin: 0 }}>ERP Enterprise</Title>

@@ -7,20 +7,27 @@ import {
   FileTextOutlined,
   LogoutOutlined,
   MailOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
   TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import { Avatar, Dropdown, Layout, Menu, Space, Typography } from 'antd';
+import { Avatar, Button, Drawer, Dropdown, Grid, Layout, Menu, Space, Typography } from 'antd';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import AdminRoute from './components/AdminRoute';
+import AnnouncementMarquee from './components/AnnouncementMarquee';
+import AppFooter from './components/AppFooter';
+import BottomTabBar from './components/BottomTabBar';
 import ForceProfileUpdate from './components/ForceProfileUpdate';
 import NotificationDropdown from './components/NotificationDropdown';
+import OfflineIndicator from './components/OfflineIndicator';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useAuth } from './contexts/AuthContext';
 import AdminLayout from './layouts/AdminLayout';
 import { formatRoleDisplayName } from './pages/Admin/utils';
 import { getMyAttendanceInfo } from './services/attendanceApi';
 import { getMyEmployeeProfile } from './services/employeeApi';
+import { getSiteConfig } from './services/siteConfigApi';
 import './index.css';
 
 const DashboardPage = lazy(() => import('./pages/Dashboard'));
@@ -38,6 +45,9 @@ const AdminWorkflowPage = lazy(() => import('./pages/Admin/WorkflowPage'));
 const AdminTemplatePage = lazy(() => import('./pages/Admin/TemplatePage'));
 const AdminQuickTitlesPage = lazy(() => import('./pages/Admin/QuickTitlesPage'));
 const AdminEmployeeConfigPage = lazy(() => import('./pages/Admin/EmployeeConfigPage'));
+const AdminAnnouncementConfigPage = lazy(() => import('./pages/Admin/AnnouncementConfigPage'));
+const AdminFooterConfigPage = lazy(() => import('./pages/Admin/FooterConfigPage'));
+const AdminLogoConfigPage = lazy(() => import('./pages/Admin/LogoConfigPage'));
 
 // Attendance (ZK) pages
 const AttendanceDashboardPage = lazy(() => import('./pages/Attendance/Dashboard'));
@@ -71,6 +81,10 @@ function App() {
   const isLoginRoute = location.pathname === '/login';
   const isAdminRoute = location.pathname.startsWith('/admin');
 
+  const screens = Grid.useBreakpoint();
+  const isDesktop = Boolean(screens.lg);
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [attInfo, setAttInfo] = useState(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const isAdmin = user?.roles?.includes('admin');
@@ -90,6 +104,21 @@ function App() {
         .catch(() => {});
     }
   }, [isAuthenticated]);
+
+  // Dynamic favicon from site config
+  useEffect(() => {
+    getSiteConfig()
+      .then((res) => {
+        const favicon = res.data?.favicon;
+        if (favicon?.image_url) {
+          const link = document.querySelector("link[rel~='icon']");
+          if (link) {
+            link.href = favicon.image_url;
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const menuPathMap = {
     dashboard: '/dashboard',
@@ -166,6 +195,19 @@ function App() {
     if (key !== 'logout') return;
     logout();
     navigate('/login', { replace: true });
+  };
+
+  const handleSidebarToggle = () => {
+    if (isDesktop) {
+      setCollapsed(v => !v);
+    } else {
+      setMobileMenuOpen(v => !v);
+    }
+  };
+
+  const handleMenuNavigate = ({ key }) => {
+    setMobileMenuOpen(false);
+    navigate(menuPathMap[key] || '/dashboard');
   };
 
   const menuItems = [
@@ -252,6 +294,9 @@ function App() {
             <Route path="template" element={<AdminTemplatePage />} />
             <Route path="quick-titles" element={<AdminQuickTitlesPage />} />
             <Route path="employee-config" element={<AdminEmployeeConfigPage />} />
+            <Route path="announcements" element={<AdminAnnouncementConfigPage />} />
+            <Route path="footer-config" element={<AdminFooterConfigPage />} />
+            <Route path="logo-config" element={<AdminLogoConfigPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/admin/users" replace />} />
         </Routes>
@@ -259,24 +304,61 @@ function App() {
     );
   }
 
+  const sidebarMenu = (
+    <>
+      <div className="erp-app-brand">
+        <Text strong className="erp-app-brand__text">ERP</Text>
+      </div>
+      <Menu
+        className="erp-app-menu"
+        mode="inline"
+        selectedKeys={[activeMenuKey]}
+        items={menuItems}
+        onClick={handleMenuNavigate}
+      />
+    </>
+  );
+
   return (
     <ForceProfileUpdate>
+    <OfflineIndicator />
     <Layout className="erp-app-layout">
-      <Sider theme="light" width={220} className="erp-app-sider">
-        <div className="erp-app-brand">
-          <Text strong className="erp-app-brand__text">ERP</Text>
-        </div>
-        <Menu
-          className="erp-app-menu"
-          mode="inline"
-          selectedKeys={[activeMenuKey]}
-          items={menuItems}
-          onClick={({ key }) => navigate(menuPathMap[key] || '/dashboard')}
-        />
+      {/* Desktop: collapsible Sider */}
+      <Sider
+        theme="light"
+        width={220}
+        collapsedWidth={isDesktop ? 64 : 0}
+        trigger={null}
+        collapsible
+        collapsed={isDesktop ? collapsed : true}
+        className="erp-app-sider"
+      >
+        {sidebarMenu}
       </Sider>
+
+      {/* Mobile: Drawer navigation */}
+      {!isDesktop && (
+        <Drawer
+          placement="left"
+          open={mobileMenuOpen}
+          onClose={() => setMobileMenuOpen(false)}
+          width={260}
+          className="erp-mobile-drawer"
+          styles={{ header: { display: 'none' }, body: { padding: 0, background: 'linear-gradient(180deg, #0f172a 0%, #172033 100%)' } }}
+        >
+          {sidebarMenu}
+        </Drawer>
+      )}
 
       <Layout>
         <Header className="erp-app-header">
+          <Button
+            type="text"
+            icon={isDesktop && !collapsed ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
+            onClick={handleSidebarToggle}
+            className="erp-app-header__toggle"
+          />
+          <AnnouncementMarquee />
           <Space size="middle" className="erp-app-header__actions">
             <NotificationDropdown />
             <Dropdown
@@ -328,11 +410,15 @@ function App() {
             </Routes>
           </Suspense>
         </Content>
+
+        <AppFooter />
       </Layout>
 
       <Suspense fallback={null}>
         <MyProfileModal open={profileModalOpen} onClose={() => setProfileModalOpen(false)} />
       </Suspense>
+
+      <BottomTabBar onMoreClick={handleSidebarToggle} />
     </Layout>
     </ForceProfileUpdate>
   );

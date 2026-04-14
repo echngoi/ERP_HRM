@@ -2,19 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Input, message, Popconfirm, Select, Space, Table, Tag } from 'antd';
 import api from '../../services/api';
 import AdminSectionPage from './AdminSectionPage';
-import { normalizeList } from './utils';
+import { formatRoleDisplayName, normalizeList } from './utils';
 import UserFormModal from './UserFormModal';
-
-const ROLE_NAME_LABELS = {
-  admin: 'Quản trị viên',
-  manager: 'Quản lý',
-  staff: 'Nhân viên',
-};
-
-function getRoleNameLabel(roleName) {
-  const normalized = String(roleName || '').toLowerCase();
-  return ROLE_NAME_LABELS[normalized] || roleName || '-';
-}
 
 export default function UsersPage() {
   const [items, setItems] = useState([]);
@@ -189,7 +178,7 @@ export default function UsersPage() {
           return (
             <Space wrap>
               {roles.map((role) => (
-                <Tag key={role.id} color="purple">{getRoleNameLabel(role.name)}</Tag>
+                <Tag key={role.id} color="purple">{formatRoleDisplayName(role.name)}</Tag>
               ))}
             </Space>
           );
@@ -263,7 +252,7 @@ export default function UsersPage() {
   const roleFilterOptions = useMemo(
     () => [
       { label: 'Tất cả vai trò', value: 'ALL' },
-      ...rbacRoles.map((role) => ({ label: getRoleNameLabel(role.name), value: String(role.id) })),
+      ...rbacRoles.map((role) => ({ label: formatRoleDisplayName(role.name), value: String(role.id) })),
     ],
     [rbacRoles],
   );

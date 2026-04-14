@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import {
   ApartmentOutlined,
+  GlobalOutlined,
   HomeOutlined,
   IdcardOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  NotificationOutlined,
   PartitionOutlined,
+  PictureOutlined,
   TeamOutlined,
   UserSwitchOutlined,
 } from '@ant-design/icons';
@@ -55,6 +58,21 @@ const menuItems = [
     icon: <IdcardOutlined />,
     label: 'Cấu hình nhân viên',
   },
+  {
+    key: 'announcements',
+    icon: <NotificationOutlined />,
+    label: 'Thông báo chạy',
+  },
+  {
+    key: 'footer-config',
+    icon: <GlobalOutlined />,
+    label: 'Cấu hình Footer',
+  },
+  {
+    key: 'logo-config',
+    icon: <PictureOutlined />,
+    label: 'Logo doanh nghiệp',
+  },
 ];
 
 const menuPathMap = {
@@ -65,6 +83,9 @@ const menuPathMap = {
   template: '/admin/template',
   'quick-titles': '/admin/quick-titles',
   'employee-config': '/admin/employee-config',
+  announcements: '/admin/announcements',
+  'footer-config': '/admin/footer-config',
+  'logo-config': '/admin/logo-config',
 };
 
 function getActiveMenuKey(pathname) {
@@ -74,6 +95,9 @@ function getActiveMenuKey(pathname) {
   if (pathname.startsWith('/admin/template')) return 'template';
   if (pathname.startsWith('/admin/quick-titles')) return 'quick-titles';
   if (pathname.startsWith('/admin/employee-config')) return 'employee-config';
+  if (pathname.startsWith('/admin/announcements')) return 'announcements';
+  if (pathname.startsWith('/admin/footer-config')) return 'footer-config';
+  if (pathname.startsWith('/admin/logo-config')) return 'logo-config';
   return 'users';
 }
 

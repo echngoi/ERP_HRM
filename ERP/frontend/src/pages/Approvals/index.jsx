@@ -31,6 +31,7 @@ import { AppstoreOutlined, CalendarOutlined, CheckOutlined, CloseOutlined, Delet
 import dayjs from 'dayjs';
 import api from '../../services/api';
 import { getCurrentUserId } from '../../services/auth';
+import PullToRefresh from '../../components/PullToRefresh';
 import ApprovalActionModal from './ApprovalActionModal';
 import EmployeeUpdateRequests from '../Employees/EmployeeUpdateRequests';
 
@@ -1727,6 +1728,7 @@ export default function ApprovalPage() {
     dataIndex: 'title',
     key: 'title',
     width: 240,
+    fixed: 'left',
     render: (value, record) => (
       <Button
         type="link"
@@ -2103,6 +2105,7 @@ export default function ApprovalPage() {
   const bulkActionableCount = selectedActionableApprovals.length;
 
   return (
+    <PullToRefresh onRefresh={() => loadApprovals({ page: pagination.current, pageSize: pagination.pageSize })}>
     <div className="fixed-list-page approval-page" data-tab={selectedCategory}>
       <Tabs
         activeKey={mainTab}
@@ -2530,5 +2533,6 @@ export default function ApprovalPage() {
       </>
       )}
     </div>
+    </PullToRefresh>
   );
 }

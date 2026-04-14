@@ -8,6 +8,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
     full_name = serializers.CharField(source="user.full_name", read_only=True)
     position = serializers.CharField(source="user.position", read_only=True)
+    roles = serializers.SerializerMethodField()
     department_name = serializers.SerializerMethodField()
     avatar_url = serializers.SerializerMethodField()
 
@@ -19,6 +20,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "username",
             "full_name",
             "position",
+            "roles",
             "department_name",
             "avatar",
             "avatar_url",
@@ -43,6 +45,9 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "user_id", "created_at", "updated_at"]
+
+    def get_roles(self, obj):
+        return list(obj.user.user_roles.select_related('role').values_list('role__name', flat=True))
 
     def get_department_name(self, obj):
         dept = obj.user.department

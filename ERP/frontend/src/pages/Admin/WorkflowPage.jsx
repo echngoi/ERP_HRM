@@ -16,7 +16,7 @@ import {
 } from 'antd';
 import api from '../../services/api';
 import AdminSectionPage from './AdminSectionPage';
-import { normalizeList } from './utils';
+import { formatRoleDisplayName, normalizeList } from './utils';
 
 const { Text } = Typography;
 
@@ -28,11 +28,6 @@ const TYPE_OPTIONS = [
 ];
 
 const WORKFLOW_TYPE_OPTIONS = TYPE_OPTIONS.filter((item) => item.value !== 'ALL');
-const DEFAULT_ROLE_LABELS = {
-  admin: 'Quản trị viên',
-  manager: 'Quản lý',
-  staff: 'Nhân viên',
-};
 
 const TYPE_LABELS = {
   LEAVE: 'Nghỉ phép',
@@ -53,7 +48,7 @@ function getTypeLabel(type) {
 
 function getRoleLabel(roleName, roleDescription = '') {
   const normalized = String(roleName || '').toLowerCase();
-  return DEFAULT_ROLE_LABELS[normalized] || roleDescription || roleName;
+  return formatRoleDisplayName(normalized) !== normalized ? formatRoleDisplayName(normalized) : (roleDescription || roleName);
 }
 
 function createStep(role = '') {

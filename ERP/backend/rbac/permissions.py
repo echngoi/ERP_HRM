@@ -3,6 +3,18 @@ from rest_framework.permissions import BasePermission
 from rbac.utils import user_has_permission
 
 
+class IsAdminUser(BasePermission):
+    """Allow access only if the user has the 'admin' role."""
+    message = "Admin role is required."
+
+    def has_permission(self, request, view):
+        return (
+            request.user
+            and request.user.is_authenticated
+            and request.user.user_roles.filter(role__name='admin').exists()
+        )
+
+
 def permission_required(code: str):
     """
     Factory that returns a DRF permission class requiring the given permission code.

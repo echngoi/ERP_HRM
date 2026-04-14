@@ -4,7 +4,7 @@ import api from '../../services/api';
 import AssignPermissionsModal from './AssignPermissionsModal';
 import AdminSectionPage from './AdminSectionPage';
 import RoleFormModal from './RoleFormModal';
-import { normalizeList } from './utils';
+import { formatRoleDisplayName, normalizeList } from './utils';
 
 const REQUIRED_PERMISSIONS = [
   { code: 'create_request', name: 'Tạo yêu cầu' },
@@ -19,17 +19,6 @@ const DEFAULT_ROLES = [
 ];
 
 const PROTECTED_ROLE_NAMES = new Set(DEFAULT_ROLES.map((role) => role.name));
-
-const ROLE_NAME_LABELS = {
-  admin: 'Quản trị viên',
-  manager: 'Quản lý',
-  staff: 'Nhân viên',
-};
-
-function getRoleNameLabel(roleName) {
-  const normalized = String(roleName || '').toLowerCase();
-  return ROLE_NAME_LABELS[normalized] || roleName || '-';
-}
 
 export default function RolesPage() {
   const [items, setItems] = useState([]);
@@ -183,7 +172,7 @@ export default function RolesPage() {
         dataIndex: 'name',
         key: 'name',
         width: 220,
-        render: (value) => getRoleNameLabel(value),
+        render: (value) => formatRoleDisplayName(value),
       },
       {
         title: 'Mô tả',

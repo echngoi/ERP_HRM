@@ -33,6 +33,7 @@ urlpatterns = [
     path('api/', include('communications.urls')),
     path('api/', include('notifications.urls')),
     path('api/', include('employees.urls')),
+    path('api/', include('common.urls')),
     path('api/attendance/', include('attendance.urls')),
 
     # iclock / ADMS endpoints — máy chấm công gửi dữ liệu đến đây

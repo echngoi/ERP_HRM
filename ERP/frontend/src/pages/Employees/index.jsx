@@ -42,6 +42,7 @@ import {
 } from '../../services/employeeApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { getMyEmployeeProfile } from '../../services/employeeApi';
+import { formatRoleDisplayName } from '../Admin/utils';
 import RewardManagement from './RewardManagement';
 
 const { Title, Text } = Typography;
@@ -201,15 +202,27 @@ export default function EmployeesPage() {
       dataIndex: 'full_name',
       key: 'full_name',
       width: 160,
+      fixed: 'left',
       ellipsis: true,
       render: (text) => <Text strong>{text}</Text>,
     },
     {
       title: 'Chức vụ',
-      dataIndex: 'position',
       key: 'position',
-      width: 140,
-      ellipsis: true,
+      width: 160,
+      render: (_, rec) => {
+        const roles = rec.roles || [];
+        if (roles.length) {
+          return (
+            <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {roles.map(r => (
+                <Tag key={r} color="blue" style={{ margin: 0 }}>{formatRoleDisplayName(r)}</Tag>
+              ))}
+            </span>
+          );
+        }
+        return <span style={{ color: '#94a3b8' }}>{rec.position || '—'}</span>;
+      },
     },
     {
       title: 'Phòng/Khoa',

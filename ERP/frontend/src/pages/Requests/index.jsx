@@ -22,6 +22,7 @@ import { CheckCircleOutlined, CloseCircleOutlined, DownOutlined, EyeOutlined, Th
 import dayjs from 'dayjs';
 import api from '../../services/api';
 import { getCurrentUserId } from '../../services/auth';
+import PullToRefresh from '../../components/PullToRefresh';
 import CreateRequestModal from './CreateRequestModal';
 import QuickCreateModal from './QuickCreateModal';
 import RequestStatusTag from './RequestStatusTag';
@@ -553,6 +554,7 @@ export default function RequestPage() {
         dataIndex: 'title',
         key: 'title',
         width: 200,
+        fixed: 'left',
         render: (title) => {
           if (!title) return <Text type="secondary">-</Text>;
           return <span>{title.charAt(0).toUpperCase() + title.slice(1)}</span>;
@@ -773,6 +775,7 @@ export default function RequestPage() {
   );
 
   return (
+    <PullToRefresh onRefresh={() => loadRequests({ page: pagination.current, pageSize: pagination.pageSize })}>
     <div className="fixed-list-page request-list-page">
       <Space direction="vertical" size="small" style={{ width: '100%' }} className="fixed-list-page-header request-list-header">
         <Flex justify="space-between" align="center" wrap="wrap" gap={12} className="list-page-titlebar">
@@ -963,5 +966,6 @@ export default function RequestPage() {
         />
       </Modal>
     </div>
+    </PullToRefresh>
   );
 }

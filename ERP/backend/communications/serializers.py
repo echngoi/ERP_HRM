@@ -2,8 +2,10 @@ from rest_framework import serializers
 
 from common.serializers import TimestampedModelSerializer
 from communications.models import (
+    Announcement,
     CustomGroup,
     CustomGroupMember,
+    FooterItem,
     Message,
     MessageAttachment,
     MessageRecipient,
@@ -140,4 +142,43 @@ class CustomGroupLookupSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
+        ]
+
+
+class AnnouncementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Announcement
+        fields = [
+            "id",
+            "content",
+            "is_active",
+            "start_date",
+            "end_date",
+            "font_family",
+            "font_size",
+            "text_color",
+            "bg_color",
+            "speed",
+            "priority",
+            "created_by",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["created_by"]
+
+
+class FooterItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FooterItem
+        fields = [
+            "id",
+            "section",
+            "label",
+            "value",
+            "icon",
+            "image_url",
+            "is_active",
+            "sort_order",
+            "created_at",
+            "updated_at",
         ]

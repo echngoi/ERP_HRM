@@ -9,14 +9,20 @@ export function formatRoleLabel(role) {
   return String(role).toUpperCase();
 }
 
+const ROLE_LABELS = {
+  admin: 'Quản trị viên',
+  manager: 'Quản lý',
+  staff: 'Nhân viên',
+};
+
 export function formatRoleDisplayName(role) {
   const normalized = String(role || '').toLowerCase();
-  if (normalized === 'admin') return 'Quản trị viên';
-  if (normalized === 'manager') return 'Quản lý';
-  if (normalized === 'staff') return 'Nhân viên';
-  return normalized ? normalized.toUpperCase() : '-';
+  return ROLE_LABELS[normalized] || (normalized ? normalized : '-');
 }
 
 export function formatBooleanStatus(value) {
   return value ? 'Đang hoạt động' : 'Đã khóa';
 }
+
+export { ROLE_LABELS };
+

@@ -1703,3 +1703,239 @@ body {
     margin-bottom: 14px;
   }
 }
+
+/* ─── Offline indicator bar ─── */
+.erp-offline-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  background: #ef4444;
+  color: #fff;
+  text-align: center;
+  padding: 6px 0;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  animation: offlineSlideDown 0.3s ease;
+}
+@keyframes offlineSlideDown {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
+/* ─── Employee Profile (desktop + mobile) ─── */
+.my-profile-header {
+  text-align: center;
+  margin-bottom: 16px;
+  padding-top: 8px;
+}
+.profile-row {
+  display: flex;
+  padding: 10px 0;
+  border-bottom: 1px solid #f5f5f5;
+}
+.profile-row__label {
+  width: 160px;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+.profile-row__value {
+  font-size: 13px;
+  word-break: break-word;
+}
+@media (max-width: 767px) {
+  .profile-row {
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 0;
+  }
+  .profile-row__label {
+    width: auto;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .profile-row__value {
+    font-size: 14px;
+  }
+  .my-profile-drawer .ant-drawer-body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ─── Toggle button in header ─── */
+.erp-app-header__toggle {
+  font-size: 18px;
+  color: #334155;
+  flex-shrink: 0;
+}
+
+/* ─── Mobile Drawer styling ─── */
+.erp-mobile-drawer .erp-app-brand {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.erp-mobile-drawer .erp-app-brand__text {
+  color: #f8fafc !important;
+}
+.erp-mobile-drawer .erp-app-menu {
+  background: transparent !important;
+}
+.erp-mobile-drawer .erp-app-menu .ant-menu-item,
+.erp-mobile-drawer .erp-app-menu .ant-menu-submenu-title {
+  color: #e2ecfa;
+}
+.erp-mobile-drawer .erp-app-menu .ant-menu-item-selected {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.32), rgba(96, 165, 250, 0.18)) !important;
+  color: #ffffff !important;
+}
+
+/* ─── Main layout mobile responsive ─── */
+@media (max-width: 991px) {
+  .erp-app-header {
+    padding: 0 12px !important;
+  }
+  .erp-app-content {
+    margin: 12px;
+    /* P3: leave room for bottom tab bar */
+    padding-bottom: 56px;
+  }
+  .erp-app-user-trigger__meta {
+    display: none;
+  }
+
+  /* P2: Touch-friendly buttons on mobile */
+  .ant-btn {
+    min-height: 40px;
+  }
+  .ant-btn-sm {
+    min-height: 32px;
+  }
+
+  /* P2: Form single-column layout on mobile */
+  .ant-form .ant-row {
+    flex-direction: column;
+  }
+  .ant-form .ant-col {
+    max-width: 100%;
+    flex: 0 0 100%;
+  }
+
+  /* P2: Table action buttons smaller on tablet */
+  .ant-table .ant-btn-icon-only {
+    min-height: 32px;
+    min-width: 32px;
+  }
+
+  /* P1: Fixed column shadow on mobile scroll */
+  .ant-table-cell-fix-left-last::after {
+    box-shadow: inset 10px 0 8px -8px rgba(0, 0, 0, 0.08) !important;
+  }
+  .ant-table-cell-fix-right-first::after {
+    box-shadow: inset -10px 0 8px -8px rgba(0, 0, 0, 0.08) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .erp-app-content {
+    margin: 8px;
+  }
+  .erp-app-header__actions {
+    gap: 6px !important;
+  }
+
+  /* P2: Larger touch targets on small phone */
+  .ant-btn {
+    min-height: 44px;
+    font-size: 14px;
+  }
+  .ant-btn-sm {
+    min-height: 36px;
+  }
+  .ant-input,
+  .ant-select-selector,
+  .ant-picker {
+    min-height: 40px !important;
+  }
+
+  /* P2: Modal full-width on phone */
+  .ant-modal {
+    max-width: calc(100vw - 16px) !important;
+    margin: 8px auto !important;
+  }
+  .ant-modal .ant-modal-body {
+    padding: 12px !important;
+  }
+
+  /* P2: Pagination compact on phone */
+  .ant-pagination {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .ant-pagination-options {
+    display: none;
+  }
+}
+
+/* ─── P3: Bottom Tab Bar (mobile only) ─── */
+.erp-bottom-tab-bar {
+  display: none;
+}
+
+@media (max-width: 991px) {
+  .erp-bottom-tab-bar {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    height: 56px;
+    background: #ffffff;
+    border-top: 1px solid #e2e8f0;
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
+    align-items: stretch;
+    justify-content: space-around;
+    padding: 0;
+  }
+
+  .erp-bottom-tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    gap: 2px;
+    border: none;
+    background: transparent;
+    color: #94a3b8;
+    font-size: 10px;
+    line-height: 1.2;
+    cursor: pointer;
+    padding: 4px 0;
+    transition: color 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .erp-bottom-tab .anticon {
+    font-size: 20px;
+  }
+
+  .erp-bottom-tab--active {
+    color: #2563eb;
+    font-weight: 600;
+  }
+
+  .erp-bottom-tab--more {
+    position: relative;
+  }
+
+  /* Hide footer on mobile to avoid clutter above tab bar */
+  .erp-app-layout .app-footer {
+    display: none;
+  }
+}

@@ -43,3 +43,25 @@
   text-align: center;
   margin-top: 8px;
 }
+
+/* ─── Mobile responsive ─── */
+@media (max-width: 480px) {
+  .login-shell {
+    padding: 16px 10px;
+  }
+  .login-card {
+    width: 100%;
+    border-radius: 12px;
+  }
+  .login-card .ant-card-body {
+    padding: 20px 16px !important;
+  }
+  .login-brand-mark {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+  }
+  .login-brand-mark svg {
+    font-size: 20px !important;
+  }
+}

@@ -7,18 +7,63 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from communications.models import (
+	Announcement,
 	CustomGroup,
+	FooterItem,
 	Message,
 	MessageAttachment,
 	MessageRecipient,
 	MessageTarget,
 )
-from communications.serializers import MessageSerializer
+from communications.serializers import AnnouncementSerializer, FooterItemSerializer, MessageSerializer
 from communications.serializers import CustomGroupLookupSerializer
+from rbac.permissions import IsAdminUser
 from departments.models import Department
 from notifications.models import Notification
 from notifications.services import create_notifications
 from users.models import User
+
+
+class AnnouncementViewSet(viewsets.ModelViewSet):
+	serializer_class = AnnouncementSerializer
+
+	def get_permissions(self):
+		if self.action == 'active':
+			return [IsAuthenticated()]
+		return [IsAuthenticated(), IsAdminUser()]
+
+	def get_queryset(self):
+		return Announcement.objects.all()
+
+	def perform_create(self, serializer):
+		serializer.save(created_by=self.request.user)
+
+	@action(detail=False, methods=['get'])
+	def active(self, request):
+		now = timezone.now()
+		qs = Announcement.objects.filter(is_active=True)
+		qs = qs.exclude(start_date__isnull=False, start_date__gt=now)
+		qs = qs.exclude(end_date__isnull=False, end_date__lt=now)
+		serializer = self.get_serializer(qs, many=True)
+		return Response(serializer.data)
+
+
+class FooterItemViewSet(viewsets.ModelViewSet):
+	serializer_class = FooterItemSerializer
+
+	def get_permissions(self):
+		if self.action in ('list', 'active'):
+			return [IsAuthenticated()]
+		return [IsAuthenticated(), IsAdminUser()]
+
+	def get_queryset(self):
+		return FooterItem.objects.all()
+
+	@action(detail=False, methods=['get'])
+	def active(self, request):
+		qs = FooterItem.objects.filter(is_active=True)
+		serializer = self.get_serializer(qs, many=True)
+		return Response(serializer.data)
 
 
 class CustomGroupViewSet(viewsets.ReadOnlyModelViewSet):
