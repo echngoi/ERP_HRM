@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  AutoComplete,
   Button,
   Card,
   Form,
@@ -10,6 +11,7 @@ import {
   Popconfirm,
   Select,
   Space,
+  Switch,
   Table,
   Tag,
   Typography,
@@ -19,18 +21,6 @@ import AdminSectionPage from './AdminSectionPage';
 import { normalizeList } from './utils';
 
 const { Text } = Typography;
-
-const TEMPLATE_TYPE_OPTIONS = [
-  { label: 'Nghỉ phép', value: 'LEAVE' },
-  { label: 'Mua hàng', value: 'PURCHASE' },
-  { label: 'Chứng từ', value: 'DOCUMENT' },
-];
-
-const TEMPLATE_TYPE_LABELS = {
-  LEAVE: 'Nghỉ phép',
-  PURCHASE: 'Mua hàng',
-  DOCUMENT: 'Chứng từ',
-};
 
 const INPUT_TYPE_OPTIONS = [
   { label: 'Văn bản', value: 'text' },
@@ -76,6 +66,11 @@ export default function TemplatePage() {
     })),
     [workflows],
   );
+
+  const existingTypeOptions = useMemo(() => {
+    const unique = [...new Set(items.map((t) => t.type).filter(Boolean))];
+    return unique.map((t) => ({ value: t, label: t }));
+  }, [items]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -157,7 +152,7 @@ export default function TemplatePage() {
 
   const openCreateModal = () => {
     createForm.resetFields();
-    createForm.setFieldsValue({ is_active: true });
+    createForm.setFieldsValue({ is_active: true, is_leave_request: false, is_overtime_request: false, is_offsite_request: false });
     setEditingTemplate(null);
     setFormFields([createField()]);
     setCreateOpen(true);
@@ -170,6 +165,9 @@ export default function TemplatePage() {
       description: template.description,
       workflow: template.workflow,
       is_active: template.is_active,
+      is_leave_request: template.is_leave_request || false,
+      is_overtime_request: template.is_overtime_request || false,
+      is_offsite_request: template.is_offsite_request || false,
     });
     setEditingTemplate(template);
     const normalizedFields = (template.schema && Array.isArray(template.schema)
@@ -205,6 +203,9 @@ export default function TemplatePage() {
         description: values.description?.trim() || '',
         workflow: Number(values.workflow),
         is_active: values.is_active !== false,
+        is_leave_request: !!values.is_leave_request,
+        is_overtime_request: !!values.is_overtime_request,
+        is_offsite_request: !!values.is_offsite_request,
         schema: formFields.map(({ id, ...field }) => field),
       };
 
@@ -248,7 +249,7 @@ export default function TemplatePage() {
         dataIndex: 'type',
         key: 'type',
         width: 120,
-        render: (value) => <Tag color="cyan">{TEMPLATE_TYPE_LABELS[value] || value}</Tag>,
+        render: (value) => <Tag color="cyan">{value}</Tag>,
       },
       {
         title: 'Tên mẫu',
@@ -339,9 +340,20 @@ export default function TemplatePage() {
           <Form.Item
             label="Loại phê duyệt"
             name="type"
-            rules={[{ required: true, message: 'Loại là bắt buộc.' }]}
+            rules={[
+              { required: true, message: 'Loại là bắt buộc.' },
+              { max: 100, message: 'Loại không vượt quá 100 ký tự.' },
+            ]}
+            extra="Chọn lại có sẵn hoặc nhập tên mới, ví dụ: Nghỉ phép, Mua hàng, Công tác..."
           >
-            <Select options={TEMPLATE_TYPE_OPTIONS} placeholder="Chọn loại" />
+            <AutoComplete
+              options={existingTypeOptions}
+              placeholder="Chọn hoặc nhập loại phê duyệt..."
+              filterOption={(inputValue, option) =>
+                option.value.toLowerCase().includes(inputValue.toLowerCase())
+              }
+              allowClear
+            />
           </Form.Item>
 
           <Form.Item
@@ -375,6 +387,18 @@ export default function TemplatePage() {
               ]}
               placeholder="Chọn trạng thái"
             />
+          </Form.Item>
+
+          <Form.Item label="Liên kết với đơn xin nghỉ phép" name="is_leave_request" valuePropName="checked">
+            <Switch checkedChildren="Có" unCheckedChildren="Không" />
+          </Form.Item>
+
+          <Form.Item label="Liên kết với đơn làm thêm" name="is_overtime_request" valuePropName="checked">
+            <Switch checkedChildren="Có" unCheckedChildren="Không" />
+          </Form.Item>
+
+          <Form.Item label="Liên kết với yêu cầu làm việc ngoại viện" name="is_offsite_request" valuePropName="checked">
+            <Switch checkedChildren="Có" unCheckedChildren="Không" />
           </Form.Item>
         </Form>
 

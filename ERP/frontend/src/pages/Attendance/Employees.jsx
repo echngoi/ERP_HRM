@@ -118,7 +118,7 @@ export default function EmployeesPage() {
       sorter: (a, b) => (a.display_name || a.name || '').localeCompare(b.display_name || b.name || '', 'vi'),
       render: (_, r) => (
         <Space>
-          <Avatar style={{ background: r.is_active ? '#1677ff' : '#d9d9d9' }} icon={<UserOutlined />} />
+          <Avatar src={r.linked_avatar_url} style={{ background: r.linked_avatar_url ? undefined : (r.is_active ? '#1677ff' : '#d9d9d9') }} icon={!r.linked_avatar_url && <UserOutlined />} />
           <div style={{ display: 'flex', flexDirection: 'column', maxWidth: 200 }}>
             <Text strong style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {r.display_name || r.name || '(Chưa đặt tên)'}

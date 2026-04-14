@@ -217,6 +217,9 @@ class ApprovalTemplateSerializer(TimestampedModelSerializer):
             "workflow_name",
             "workflow_type",
             "is_active",
+            "is_leave_request",
+            "is_overtime_request",
+            "is_offsite_request",
             "created_at",
             "updated_at",
         ]

@@ -51,4 +51,20 @@ urlpatterns = [
     path('penalty-configs/',            views.PenaltyConfigListCreateView.as_view(),  name='penalty-config-list'),
     path('penalty-configs/<int:pk>/',   views.PenaltyConfigDetailView.as_view(),      name='penalty-config-detail'),
     path('penalty-configs/bulk/',       views.PenaltyConfigBulkView.as_view(),        name='penalty-config-bulk'),
+
+    # Leave management
+    path('leave/config/',    views.LeaveConfigView.as_view(),      name='leave-config'),
+    path('leave/balances/',  views.LeaveBalanceListView.as_view(), name='leave-balances'),
+    path('leave/my/',        views.MyLeaveView.as_view(),          name='leave-my'),
+    path('leave/request/',   views.LeaveRequestCreateView.as_view(), name='leave-request-create'),
+    path('leave/requests/',  views.LeaveRequestListView.as_view(), name='leave-request-list'),
+    path('leave/requests/<int:pk>/cancel/', views.LeaveRequestCancelView.as_view(), name='leave-request-cancel'),
+
+    # Overtime management
+    path('overtime/request/',  views.OvertimeCreateView.as_view(), name='overtime-request-create'),
+    path('overtime/requests/', views.OvertimeListView.as_view(),   name='overtime-request-list'),
+
+    # Offsite work management
+    path('offsite/request/',  views.OffsiteCreateView.as_view(), name='offsite-request-create'),
+    path('offsite/requests/', views.OffsiteListView.as_view(),   name='offsite-request-list'),
 ]

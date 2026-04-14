@@ -62,6 +62,12 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             client_ip,
         )
 
+        profile = getattr(user, "employee_profile", None)
+        if profile and profile.avatar:
+            avatar_url = request.build_absolute_uri(profile.avatar.url) if request else profile.avatar.url
+        else:
+            avatar_url = None
+
         data["user"] = {
             "id": user.id,
             "username": user.username,
@@ -69,6 +75,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             "roles": [str(name).lower() for name in get_user_role_names(user)],
             "permissions": get_user_permissions(user),
             "attendance_employee_id": user.attendance_employee.user_id if user.attendance_employee_id else None,
+            "avatar_url": avatar_url,
         }
         return data
 

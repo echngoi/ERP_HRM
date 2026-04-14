@@ -17,7 +17,7 @@ class UserViewSet(viewsets.ModelViewSet):
     filterset_fields = ["department"]
 
     def get_queryset(self):
-        queryset = User.objects.select_related("department").prefetch_related("user_roles__role").order_by("username")
+        queryset = User.objects.select_related("department", "employee_profile").prefetch_related("user_roles__role").order_by("username")
         role_id = self.request.query_params.get("role_id")
         if role_id:
             queryset = queryset.filter(user_roles__role_id=role_id)
@@ -43,7 +43,7 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="lookup", permission_classes=[IsAuthenticated])
     def lookup(self, request):
         queryset = self.get_queryset().filter(is_active=True)
-        serializer = UserLookupSerializer(queryset, many=True)
+        serializer = UserLookupSerializer(queryset, many=True, context={"request": request})
         return Response(serializer.data)
 
     @action(detail=False, methods=["get"], url_path="check-username", permission_classes=[IsAdmin])

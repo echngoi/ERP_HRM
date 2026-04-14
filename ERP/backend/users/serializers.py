@@ -21,6 +21,7 @@ class UserSerializer(TimestampedModelSerializer):
         required=False,
         allow_empty=True,
     )
+    avatar_url = serializers.SerializerMethodField(read_only=True)
     attendance_employee = serializers.PrimaryKeyRelatedField(
         queryset=AttEmployee.objects.all(), allow_null=True, required=False
     )
@@ -45,6 +46,7 @@ class UserSerializer(TimestampedModelSerializer):
             "is_active",
             "roles",
             "role_ids",
+            "avatar_url",
             "attendance_employee",
             "attendance_employee_name",
             "attendance_employee_uid",
@@ -55,6 +57,15 @@ class UserSerializer(TimestampedModelSerializer):
     def get_roles(self, obj):
         roles = Role.objects.filter(user_roles__user=obj).order_by("name")
         return RoleSerializer(roles, many=True).data
+
+    def get_avatar_url(self, obj):
+        profile = getattr(obj, "employee_profile", None)
+        if profile and profile.avatar:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(profile.avatar.url)
+            return profile.avatar.url
+        return None
 
     def validate_full_name(self, value):
         return value.strip()
@@ -102,6 +113,8 @@ class UserSerializer(TimestampedModelSerializer):
 
 
 class UserLookupSerializer(serializers.ModelSerializer):
+    avatar_url = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = User
         fields = [
@@ -109,4 +122,14 @@ class UserLookupSerializer(serializers.ModelSerializer):
             "username",
             "full_name",
             "email",
+            "avatar_url",
         ]
+
+    def get_avatar_url(self, obj):
+        profile = getattr(obj, "employee_profile", None)
+        if profile and profile.avatar:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(profile.avatar.url)
+            return profile.avatar.url
+        return None

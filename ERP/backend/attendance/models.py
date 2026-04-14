@@ -239,3 +239,214 @@ class PenaltyConfig(models.Model):
     def __str__(self):
         bound = f'lần {self.from_count}–{self.to_count or "∞"}'
         return f"{self.shift.name} | {self.get_rule_type_display()} {bound}: {self.penalty_amount:,}đ"
+
+
+# ── Leave Management ──────────────────────────────────────
+
+
+class LeaveConfig(models.Model):
+    """Singleton – cấu hình cách tính nghỉ phép."""
+    CONTRACT_STATUS_CHOICES = [
+        ("PROBATION", "Thử việc"),
+        ("FIXED_TERM", "HĐ xác định thời hạn"),
+        ("INDEFINITE", "HĐ không xác định thời hạn"),
+    ]
+
+    start_contract_status = models.CharField(
+        "Trạng thái HĐ bắt đầu tính phép",
+        max_length=20,
+        choices=CONTRACT_STATUS_CHOICES,
+        default="FIXED_TERM",
+    )
+    annual_leave_days = models.PositiveIntegerField(
+        "Số ngày phép tối đa/năm", default=12,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Cấu hình nghỉ phép"
+        verbose_name_plural = "Cấu hình nghỉ phép"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_config(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return "Cấu hình nghỉ phép"
+
+
+class LeaveBalance(models.Model):
+    """Per-employee per-year leave balance."""
+    employee = models.ForeignKey(
+        "employees.Employee",
+        on_delete=models.CASCADE,
+        related_name="leave_balances",
+    )
+    year = models.PositiveIntegerField("Năm")
+    carried_over_days = models.DecimalField(
+        "Ngày phép bảo lưu", max_digits=5, decimal_places=1, default=0,
+    )
+    used_days = models.DecimalField(
+        "Ngày phép đã dùng", max_digits=5, decimal_places=1, default=0,
+    )
+    note = models.TextField("Ghi chú", blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ["employee", "year"]
+        ordering = ["-year"]
+        verbose_name = "Số phép nhân viên"
+        verbose_name_plural = "Số phép nhân viên"
+
+    def __str__(self):
+        return f"{self.employee} – {self.year}"
+
+
+class LeaveRequestRecord(models.Model):
+    """Tracks individual leave request linked to an approval request."""
+
+    class LeaveType(models.TextChoices):
+        FULL_DAY = "FULL_DAY", "Nghỉ cả ngày"
+        MORNING = "MORNING", "Nghỉ sáng"
+        AFTERNOON = "AFTERNOON", "Nghỉ chiều"
+
+    class PaidType(models.TextChoices):
+        PAID = "PAID", "Nghỉ có lương"
+        UNPAID = "UNPAID", "Nghỉ không lương"
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Chờ duyệt"
+        APPROVED = "APPROVED", "Đã duyệt"
+        REJECTED = "REJECTED", "Từ chối"
+        CANCELLED = "CANCELLED", "Đã hủy"
+
+    employee = models.ForeignKey(
+        "employees.Employee",
+        on_delete=models.CASCADE,
+        related_name="leave_requests",
+    )
+    approval_request = models.ForeignKey(
+        "requestsystem.Request",
+        on_delete=models.CASCADE,
+        related_name="leave_records",
+        null=True, blank=True,
+    )
+    leave_date = models.DateField("Ngày nghỉ")
+    leave_type = models.CharField(
+        "Loại nghỉ", max_length=20, choices=LeaveType.choices, default=LeaveType.FULL_DAY,
+    )
+    paid_type = models.CharField(
+        "Nghỉ lương/không lương", max_length=10, choices=PaidType.choices, default=PaidType.PAID,
+    )
+    deducted_days = models.DecimalField(
+        "Số ngày trừ phép", max_digits=3, decimal_places=1, default=1,
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING,
+    )
+    reason = models.TextField("Lý do", blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-leave_date"]
+        verbose_name = "Bản ghi nghỉ phép"
+        verbose_name_plural = "Bản ghi nghỉ phép"
+
+    def __str__(self):
+        return f"{self.employee} – {self.leave_date} ({self.get_leave_type_display()})"
+
+
+class OvertimeRecord(models.Model):
+    """Tracks individual overtime request linked to an approval request."""
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Chờ duyệt"
+        APPROVED = "APPROVED", "Đã duyệt"
+        REJECTED = "REJECTED", "Từ chối"
+        CANCELLED = "CANCELLED", "Đã hủy"
+
+    employee = models.ForeignKey(
+        "employees.Employee",
+        on_delete=models.CASCADE,
+        related_name="overtime_records",
+    )
+    approval_request = models.ForeignKey(
+        "requestsystem.Request",
+        on_delete=models.CASCADE,
+        related_name="overtime_records",
+        null=True, blank=True,
+    )
+    ot_date = models.DateField("Ngày làm thêm")
+    start_time = models.TimeField("Giờ bắt đầu")
+    end_time = models.TimeField("Giờ kết thúc")
+    ot_hours = models.DecimalField(
+        "Số giờ làm thêm", max_digits=4, decimal_places=1, default=0,
+    )
+    reason = models.TextField("Lý do làm thêm", blank=True)
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-ot_date"]
+        verbose_name = "Bản ghi làm thêm"
+        verbose_name_plural = "Bản ghi làm thêm"
+
+    def __str__(self):
+        return f"{self.employee} – {self.ot_date} ({self.start_time}~{self.end_time})"
+
+
+class OffsiteWorkRecord(models.Model):
+    """Tracks individual offsite work request linked to an approval request."""
+
+    class WorkType(models.TextChoices):
+        FULL_DAY = "FULL_DAY", "Cả ngày"
+        MORNING = "MORNING", "Buổi sáng"
+        AFTERNOON = "AFTERNOON", "Buổi chiều"
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Chờ duyệt"
+        APPROVED = "APPROVED", "Đã duyệt"
+        REJECTED = "REJECTED", "Từ chối"
+        CANCELLED = "CANCELLED", "Đã hủy"
+
+    employee = models.ForeignKey(
+        "employees.Employee",
+        on_delete=models.CASCADE,
+        related_name="offsite_records",
+    )
+    approval_request = models.ForeignKey(
+        "requestsystem.Request",
+        on_delete=models.CASCADE,
+        related_name="offsite_records",
+        null=True, blank=True,
+    )
+    work_date = models.DateField("Ngày làm việc ngoại viện")
+    work_type = models.CharField(
+        "Loại", max_length=20, choices=WorkType.choices, default=WorkType.FULL_DAY,
+    )
+    location = models.CharField("Địa điểm", max_length=255, blank=True)
+    reason = models.TextField("Lý do", blank=True)
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-work_date"]
+        verbose_name = "Bản ghi ngoại viện"
+        verbose_name_plural = "Bản ghi ngoại viện"
+
+    def __str__(self):
+        return f"{self.employee} – {self.work_date} ({self.get_work_type_display()})"

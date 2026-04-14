@@ -45,6 +45,7 @@ function buildUserFromToken(tokenPayload, fallbackUser) {
     last_name: fallbackUser?.last_name ?? '',
     email: fallbackUser?.email ?? '',
     permissions: fallbackUser?.permissions ?? [],
+    avatar_url: fallbackUser?.avatar_url ?? null,
   };
 }
 
@@ -102,12 +103,21 @@ export function AuthProvider({ children }) {
     setAuthState({ user: null, isAuthenticated: false });
   };
 
+  const updateUser = (fields) => {
+    setAuthState((prev) => {
+      const updated = { ...prev.user, ...fields };
+      localStorage.setItem('user', JSON.stringify(updated));
+      return { ...prev, user: updated };
+    });
+  };
+
   const value = useMemo(
     () => ({
       user: authState.user,
       isAuthenticated: authState.isAuthenticated,
       login,
       logout,
+      updateUser,
     }),
     [authState],
   );

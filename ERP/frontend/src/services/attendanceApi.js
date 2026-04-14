@@ -62,3 +62,21 @@ export const deleteLateEarlyRule = (id) => api.delete(`${ATTENDANCE_BASE}/late-e
 export const getPenaltyConfigs   = (shiftId) => api.get(`${ATTENDANCE_BASE}/penalty-configs/`, { params: { shift_id: shiftId } });
 export const savePenaltyConfigs  = (shiftId, configs) => api.post(`${ATTENDANCE_BASE}/penalty-configs/bulk/`, { shift_id: shiftId, configs });
 export const deletePenaltyConfig = (id) => api.delete(`${ATTENDANCE_BASE}/penalty-configs/${id}/`);
+
+// ── Leave Management ─────────────────────────────────────
+export const getLeaveConfig      = () => api.get(`${ATTENDANCE_BASE}/leave/config/`);
+export const updateLeaveConfig   = (data) => api.put(`${ATTENDANCE_BASE}/leave/config/`, data);
+export const getLeaveBalances    = (params) => api.get(`${ATTENDANCE_BASE}/leave/balances/`, { params });
+export const updateLeaveBalance  = (data) => api.post(`${ATTENDANCE_BASE}/leave/balances/`, data);
+export const getMyLeave          = (params) => api.get(`${ATTENDANCE_BASE}/leave/my/`, { params });
+export const createLeaveRequest  = (data) => api.post(`${ATTENDANCE_BASE}/leave/request/`, data);
+export const getLeaveRequests    = (params) => api.get(`${ATTENDANCE_BASE}/leave/requests/`, { params });
+export const cancelLeaveRequest  = (id) => api.post(`${ATTENDANCE_BASE}/leave/requests/${id}/cancel/`);
+
+// ── Overtime Management ──────────────────────────────────
+export const createOvertimeRequest = (data) => api.post(`${ATTENDANCE_BASE}/overtime/request/`, data);
+export const getOvertimeRequests   = (params) => api.get(`${ATTENDANCE_BASE}/overtime/requests/`, { params });
+
+// ── Offsite Work Management ──────────────────────────────
+export const createOffsiteRequest = (data) => api.post(`${ATTENDANCE_BASE}/offsite/request/`, data);
+export const getOffsiteRequests   = (params) => api.get(`${ATTENDANCE_BASE}/offsite/requests/`, { params });

@@ -9,7 +9,7 @@ import {
   WarningOutlined, DollarOutlined, FileExcelOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { getAttendanceReport, getEmployees, getMyAttendanceInfo, exportAttendanceReport } from '../../services/attendanceApi';
+import { getAttendanceReport, getEmployees, getMyAttendanceInfo, exportAttendanceReport, getLeaveRequests, getOvertimeRequests, getOffsiteRequests } from '../../services/attendanceApi';
 
 const { Title, Text } = Typography;
 
@@ -39,6 +39,48 @@ function filterPunches(punches, shift) {
   return [punches[0], ...punches.slice(-(maxPunches - 1))];
 }
 
+/**
+ * Tính ngày công cho 1 ô ngày:
+ * - Nghỉ phép có lương: full=1, half=0.5
+ * - Ngoại viện: full=1, half=0.5
+ * - Chấm công: có giờ vào (<12h) + giờ ra (>=17h) = 1, chỉ 1 buổi = 0.5
+ * Kết hợp half-leave + half-offsite, half-leave + attendance, half-offsite + attendance...
+ */
+function calcWorkDay(info, leaveRec, offsiteRec) {
+  let val = 0;
+  // Paid leave contribution
+  if (leaveRec && leaveRec.paid_type === 'PAID') {
+    if (leaveRec.leave_type === 'FULL_DAY') return 1;
+    val += 0.5;
+  }
+  // Offsite contribution
+  if (offsiteRec) {
+    if (offsiteRec.work_type === 'FULL_DAY') return val > 0 ? Math.min(val + 1, 1) : 1;
+    val += 0.5;
+  }
+  // If we already have 1 from leave+offsite combos, done
+  if (val >= 1) return 1;
+  // Attendance contribution (only for the remaining portion)
+  if (info && info.status !== 'absent') {
+    const punches = info.punches || [];
+    const ci = punches[0] || info.check_in;
+    const co = punches.length > 1 ? punches[punches.length - 1] : info.check_out;
+    const hasMorning = ci && ci < '12:00';
+    const hasAfternoon = co && co >= '17:00';
+    if (hasMorning && hasAfternoon) {
+      val += (val === 0) ? 1 : 0.5; // fill remaining
+    } else if (hasMorning || hasAfternoon) {
+      val += 0.5;
+    }
+  }
+  return Math.min(val, 1);
+}
+
+/** Ngày công chuẩn = tổng ngày trong tháng - số ngày Chủ nhật */
+function calcStandardDays(days) {
+  return days.filter(d => d.dow !== 0).length;
+}
+
 /* ── component ───────────────────────────────────────── */
 export default function MonthlyAttendance() {
   const [month, setMonth]             = useState(dayjs().startOf('month'));
@@ -48,6 +90,9 @@ export default function MonthlyAttendance() {
   const [exporting, setExporting]     = useState(false);
   const [reportData, setReportData]   = useState(null);
   const [attInfo, setAttInfo]         = useState(null);
+  const [leaveMap, setLeaveMap]       = useState({});
+  const [otMap, setOtMap]             = useState({});
+  const [offsiteMap, setOffsiteMap]   = useState({});
 
   const canViewAll = attInfo?.view_all_pages?.includes('monthly');
 
@@ -73,8 +118,33 @@ export default function MonthlyAttendance() {
         _page: 'monthly',
       };
       if (canViewAll && selectedUser) params.user_id = selectedUser;
-      const res = await getAttendanceReport(params);
+      const [res, leaveRes, otRes, offsiteRes] = await Promise.all([
+        getAttendanceReport(params),
+        getLeaveRequests({ year: month.year(), month: month.month() + 1, status: 'APPROVED' }).catch(() => ({ data: [] })),
+        getOvertimeRequests({ year: month.year(), month: month.month() + 1, status: 'APPROVED' }).catch(() => ({ data: [] })),
+        getOffsiteRequests({ year: month.year(), month: month.month() + 1, status: 'APPROVED' }).catch(() => ({ data: [] })),
+      ]);
       setReportData(res.data);
+      // Build leave lookup: { `${employee_id}_${date}` : record }
+      const lMap = {};
+      for (const rec of (leaveRes.data || [])) {
+        lMap[`${rec.employee}_${rec.leave_date}`] = rec;
+      }
+      setLeaveMap(lMap);
+      // Build overtime lookup: { `${employee_id}_${date}` : record }
+      const oMap = {};
+      for (const rec of (otRes.data || [])) {
+        const key = `${rec.employee}_${rec.ot_date}`;
+        if (!oMap[key]) oMap[key] = [];
+        oMap[key].push(rec);
+      }
+      setOtMap(oMap);
+      // Build offsite lookup: { `${employee_id}_${date}` : record }
+      const osMap = {};
+      for (const rec of (offsiteRes.data || [])) {
+        osMap[`${rec.employee}_${rec.work_date}`] = rec;
+      }
+      setOffsiteMap(osMap);
     } catch {
       message.error('Không thể tải dữ liệu chấm công');
     } finally {
@@ -275,6 +345,9 @@ export default function MonthlyAttendance() {
                   <Tag color="green"><span className="cell-badge green" /> Đi làm</Tag>
                   <Tag color="red"><span className="cell-badge red" /> Vắng</Tag>
                   <Tag color="orange"><span className="cell-badge orange" /> Đi muộn</Tag>
+                  <Tag color="blue"><span className="cell-badge" style={{ background: '#1677ff', display: 'inline-block', width: 8, height: 8, borderRadius: '50%' }} /> Nghỉ phép (CL)</Tag>
+                  <Tag color="orange"><span className="cell-badge" style={{ background: '#d46b08', display: 'inline-block', width: 8, height: 8, borderRadius: '50%' }} /> Nghỉ phép (KL)</Tag>
+                  <Tag color="purple"><span className="cell-badge" style={{ background: '#722ed1', display: 'inline-block', width: 8, height: 8, borderRadius: '50%' }} /> Ngoại viện</Tag>
                 </Space>
               }
               styles={{ body: { padding: 0, overflow: 'auto' } }}
@@ -294,8 +367,8 @@ export default function MonthlyAttendance() {
                               {DAY_LABELS[d.dow]}
                             </th>
                           ))}
-                          <th rowSpan={2} style={{ width: 55, padding: '4px 2px', fontSize: 11 }}>Đi làm</th>
-                          <th rowSpan={2} style={{ width: 50, padding: '4px 2px', fontSize: 11 }}>Vắng</th>
+                          <th rowSpan={2} style={{ width: 55, padding: '4px 2px', fontSize: 11 }}>Công TT</th>
+                          <th rowSpan={2} style={{ width: 55, padding: '4px 2px', fontSize: 11 }}>Công chuẩn</th>
                         </tr>
                         <tr>
                           {days.map(d => (
@@ -322,6 +395,135 @@ export default function MonthlyAttendance() {
                               {days.map(d => {
                                 const info = dayMap[d.date];
                                 const isFuture = d.date > today;
+                                const empProfileId = emp.employee_profile_id;
+                                const leaveRec = empProfileId ? leaveMap[`${empProfileId}_${d.date}`] : null;
+                                const offsiteRec = empProfileId ? offsiteMap[`${empProfileId}_${d.date}`] : null;
+
+                                // Combined: half-day leave + half-day offsite on the same day
+                                if (leaveRec && offsiteRec) {
+                                  const leaveMorning  = leaveRec.leave_type   === 'MORNING';
+                                  const leaveFullDay  = leaveRec.leave_type   === 'FULL_DAY';
+                                  const offsiteMorning = offsiteRec.work_type === 'MORNING';
+                                  const isPaid        = leaveRec.paid_type === 'PAID';
+                                  const leaveColor    = isPaid ? '#1677ff' : '#d46b08';
+                                  const paidLabel     = isPaid ? 'CL' : 'KL';
+                                  const leaveSession  = leaveFullDay ? 'cả ngày' : leaveMorning ? 'sáng' : 'chiều';
+                                  const offsiteSession = offsiteRec.work_type === 'FULL_DAY' ? 'cả ngày' : offsiteMorning ? 'sáng' : 'chiều';
+                                  const tooltipTitle  = `${d.date} — Nghỉ phép buổi ${leaveSession} (${isPaid ? 'Có lương' : 'Không lương'}) + Ngoại viện buổi ${offsiteSession}`;
+                                  // Put morning block first, afternoon block second
+                                  const leaveFirst = leaveFullDay || leaveMorning || !offsiteMorning;
+                                  const topSection    = leaveFirst
+                                    ? { color: leaveColor,  label: `Nghỉ ${leaveSession}`,   sub: paidLabel }
+                                    : { color: '#722ed1',   label: `NV ${offsiteSession}`,    sub: '' };
+                                  const bottomSection = leaveFirst
+                                    ? { color: '#722ed1',   label: `NV ${offsiteSession}`,    sub: '' }
+                                    : { color: leaveColor,  label: `Nghỉ ${leaveSession}`,    sub: paidLabel };
+                                  return (
+                                    <Tooltip key={d.day} title={tooltipTitle}>
+                                      <td className="day-cell" style={{ background: '#fafafa', textAlign: 'center', padding: '2px' }}>
+                                        <div style={{ borderBottom: '1px dashed #d9d9d9', paddingBottom: 2, marginBottom: 2 }}>
+                                          <span className="cell-badge" style={{ background: topSection.color }} />
+                                          <div style={{ color: topSection.color, fontSize: 9, fontWeight: 600 }}>{topSection.label}</div>
+                                          {topSection.sub && <div style={{ color: topSection.color, fontSize: 8 }}>{topSection.sub}</div>}
+                                        </div>
+                                        <div>
+                                          <span className="cell-badge" style={{ background: bottomSection.color }} />
+                                          <div style={{ color: bottomSection.color, fontSize: 9, fontWeight: 600 }}>{bottomSection.label}</div>
+                                          {bottomSection.sub && <div style={{ color: bottomSection.color, fontSize: 8 }}>{bottomSection.sub}</div>}
+                                        </div>
+                                      </td>
+                                    </Tooltip>
+                                  );
+                                }
+
+                                // Leave day takes priority over future-date gray dot
+                                if (leaveRec) {
+                                  const isFullDay = leaveRec.leave_type === 'FULL_DAY';
+                                  const isMorning = leaveRec.leave_type === 'MORNING';
+                                  const isPaid = leaveRec.paid_type === 'PAID';
+                                  const paidLabel = isPaid ? 'Có lương' : 'Không lương';
+                                  const sessionLabel = isFullDay ? 'Cả ngày' : isMorning ? 'Buổi sáng' : 'Buổi chiều';
+                                  const tooltipTitle = `${d.date} — Nghỉ phép ${sessionLabel} (${paidLabel})`;
+                                  // Paid = blue, Unpaid = orange
+                                  const color = isPaid ? '#1677ff' : '#d46b08';
+                                  const bgColor = isPaid ? '#e6f4ff' : '#fff7e6';
+                                  const dividerColor = isPaid ? '#91caff' : '#ffd591';
+
+                                  if (isFullDay) {
+                                    return (
+                                      <Tooltip key={d.day} title={tooltipTitle}>
+                                        <td className="day-cell" style={{ background: bgColor, textAlign: 'center' }}>
+                                          <span className="cell-badge" style={{ background: color }} />
+                                          <div style={{ color, fontSize: 10, fontWeight: 600 }}>Nghỉ phép</div>
+                                          <div style={{ color, fontSize: 9 }}>{isPaid ? 'Có lương' : 'Không lương'}</div>
+                                        </td>
+                                      </Tooltip>
+                                    );
+                                  }
+                                  // Half-day leave: show leave section + attendance for working half
+                                  const halfInfo = info;
+                                  const halfPunches = halfInfo ? filterPunches(halfInfo.punches || [], emp.shift) : [];
+                                  const halfCheckIn = halfPunches[0] || halfInfo?.check_in;
+                                  const halfCheckOut = halfPunches.length > 1 ? halfPunches[halfPunches.length - 1] : halfInfo?.check_out;
+                                  return (
+                                    <Tooltip key={d.day} title={tooltipTitle}>
+                                      <td className="day-cell" style={{ background: bgColor, textAlign: 'center', padding: '2px' }}>
+                                        <div style={{ borderBottom: `1px dashed ${dividerColor}`, paddingBottom: 2, marginBottom: 2 }}>
+                                          <span className="cell-badge" style={{ background: color }} />
+                                          <div style={{ color, fontSize: 9, fontWeight: 600 }}>Nghỉ {isMorning ? 'sáng' : 'chiều'}</div>
+                                          <div style={{ color, fontSize: 8 }}>{isPaid ? 'CL' : 'KL'}</div>
+                                        </div>
+                                        {(halfCheckIn || halfCheckOut) && (
+                                          <div style={{ fontSize: 9, color: '#555', lineHeight: 1.3 }}>
+                                            {halfCheckIn && <div>{halfCheckIn}</div>}
+                                            {halfCheckOut && <div>{halfCheckOut}</div>}
+                                          </div>
+                                        )}
+                                      </td>
+                                    </Tooltip>
+                                  );
+                                }
+
+                                // Offsite work day: purple badge
+                                if (offsiteRec) {
+                                  const isFullDay = offsiteRec.work_type === 'FULL_DAY';
+                                  const isMorning = offsiteRec.work_type === 'MORNING';
+                                  const sessionLabel = isFullDay ? 'Cả ngày' : isMorning ? 'Buổi sáng' : 'Buổi chiều';
+                                  const tooltipTitle = `${d.date} — Ngoại viện ${sessionLabel}${offsiteRec.location ? ` — ${offsiteRec.location}` : ''}`;
+
+                                  if (isFullDay) {
+                                    return (
+                                      <Tooltip key={d.day} title={tooltipTitle}>
+                                        <td className="day-cell" style={{ background: '#f9f0ff', textAlign: 'center' }}>
+                                          <span className="cell-badge" style={{ background: '#722ed1' }} />
+                                          <div style={{ color: '#722ed1', fontSize: 10, fontWeight: 600 }}>Ngoại viện</div>
+                                          <div style={{ color: '#722ed1', fontSize: 9 }}>Cả ngày</div>
+                                        </td>
+                                      </Tooltip>
+                                    );
+                                  }
+                                  // Half-day offsite: show offsite section + attendance for working half
+                                  const halfInfo = info;
+                                  const halfPunches = halfInfo ? filterPunches(halfInfo.punches || [], emp.shift) : [];
+                                  const halfCheckIn = halfPunches[0] || halfInfo?.check_in;
+                                  const halfCheckOut = halfPunches.length > 1 ? halfPunches[halfPunches.length - 1] : halfInfo?.check_out;
+                                  return (
+                                    <Tooltip key={d.day} title={tooltipTitle}>
+                                      <td className="day-cell" style={{ background: '#f9f0ff', textAlign: 'center', padding: '2px' }}>
+                                        <div style={{ borderBottom: '1px dashed #d3adf7', paddingBottom: 2, marginBottom: 2 }}>
+                                          <span className="cell-badge" style={{ background: '#722ed1' }} />
+                                          <div style={{ color: '#722ed1', fontSize: 9, fontWeight: 600 }}>NV {isMorning ? 'sáng' : 'chiều'}</div>
+                                        </div>
+                                        {(halfCheckIn || halfCheckOut) && (
+                                          <div style={{ fontSize: 9, color: '#555', lineHeight: 1.3 }}>
+                                            {halfCheckIn && <div>{halfCheckIn}</div>}
+                                            {halfCheckOut && <div>{halfCheckOut}</div>}
+                                          </div>
+                                        )}
+                                      </td>
+                                    </Tooltip>
+                                  );
+                                }
 
                                 if (isFuture) {
                                   return (
@@ -395,8 +597,23 @@ export default function MonthlyAttendance() {
                                   </Tooltip>
                                 );
                               })}
-                              <td className="summary-cell" style={{ color: '#52c41a' }}>{emp.summary.present}</td>
-                              <td className="summary-cell" style={{ color: '#ff4d4f' }}>{emp.summary.absent}</td>
+                              {(() => {
+                                const epId = emp.employee_profile_id;
+                                let actualDays = 0;
+                                for (const d of days) {
+                                  const info = dayMap[d.date];
+                                  const lr = epId ? leaveMap[`${epId}_${d.date}`] : null;
+                                  const os = epId ? offsiteMap[`${epId}_${d.date}`] : null;
+                                  actualDays += calcWorkDay(info, lr, os);
+                                }
+                                const stdDays = calcStandardDays(days);
+                                return (
+                                  <>
+                                    <td className="summary-cell" style={{ color: '#52c41a' }}>{actualDays % 1 === 0 ? actualDays : actualDays.toFixed(1)}</td>
+                                    <td className="summary-cell" style={{ color: '#1677ff' }}>{stdDays}</td>
+                                  </>
+                                );
+                              })()}
                             </tr>
                           );
                         })}
@@ -516,6 +733,97 @@ export default function MonthlyAttendance() {
                       pagination={false} scroll={{ x: 1100 }} />
                   </Card>
                 )}
+              </div>
+            );
+          })(),
+        },
+        {
+          key: 'overtime',
+          label: <span><CalendarOutlined /> Giờ làm thêm</span>,
+          children: (() => {
+            // Build OT detail data from otMap
+            const otData = [];
+            const empOtSummary = {};
+            for (const emp of empList) {
+              const epId = emp.employee_profile_id;
+              if (!epId) continue;
+              let totalHours = 0;
+              for (const d of days) {
+                const recs = otMap[`${epId}_${d.date}`];
+                if (recs) {
+                  for (const rec of recs) {
+                    const hours = parseFloat(rec.ot_hours) || 0;
+                    totalHours += hours;
+                    otData.push({
+                      key: `${rec.id}`,
+                      employee_name: emp.employee_name,
+                      username: emp.username || emp.user_id,
+                      department: emp.department,
+                      date: rec.ot_date,
+                      start_time: rec.start_time,
+                      end_time: rec.end_time,
+                      ot_hours: hours,
+                      reason: rec.reason,
+                    });
+                  }
+                }
+              }
+              if (totalHours > 0) {
+                empOtSummary[epId] = {
+                  key: epId,
+                  employee_name: emp.employee_name,
+                  username: emp.username || emp.user_id,
+                  department: emp.department,
+                  total_hours: Math.round(totalHours * 10) / 10,
+                };
+              }
+            }
+
+            const otCols = [
+              { title: 'Mã NV', dataIndex: 'username', width: 100 },
+              { title: 'Họ tên', dataIndex: 'employee_name', width: 160 },
+              { title: 'Phòng ban', dataIndex: 'department', width: 120 },
+              { title: 'Ngày', dataIndex: 'date', width: 110, render: v => dayjs(v).format('DD/MM/YYYY') },
+              { title: 'Bắt đầu', dataIndex: 'start_time', width: 90, align: 'center' },
+              { title: 'Kết thúc', dataIndex: 'end_time', width: 90, align: 'center' },
+              { title: 'Số giờ', dataIndex: 'ot_hours', width: 90, align: 'center',
+                render: v => <Tag color="blue">{v}h</Tag> },
+              { title: 'Lý do', dataIndex: 'reason', width: 200 },
+            ];
+
+            const summaryCols = [
+              { title: 'Mã NV', dataIndex: 'username', width: 100 },
+              { title: 'Họ tên', dataIndex: 'employee_name', width: 160 },
+              { title: 'Phòng ban', dataIndex: 'department', width: 120 },
+              { title: 'Tổng giờ làm thêm', dataIndex: 'total_hours', width: 150, align: 'center',
+                render: v => <Tag color="blue">{v} giờ</Tag> },
+            ];
+
+            const summaryList = Object.values(empOtSummary);
+            const grandTotal = summaryList.reduce((s, e) => s + e.total_hours, 0);
+
+            return (
+              <div>
+                {summaryList.length > 0 && (
+                  <Card size="small" title={
+                    <Space>
+                      <CalendarOutlined style={{ color: '#1677ff' }} />
+                      <span>Tổng hợp giờ làm thêm tháng {month.format('MM/YYYY')}</span>
+                      <Tag color="blue">Tổng: {Math.round(grandTotal * 10) / 10} giờ</Tag>
+                    </Space>
+                  } style={{ marginBottom: 16 }}>
+                    <Table dataSource={summaryList} columns={summaryCols} size="small" bordered
+                      pagination={false} scroll={{ x: 500 }} />
+                  </Card>
+                )}
+                <Card size="small" title={<span><CalendarOutlined style={{ color: '#1677ff' }} /> Chi tiết giờ làm thêm</span>}>
+                  {otData.length === 0
+                    ? <Empty description="Không có dữ liệu làm thêm trong tháng này" />
+                    : <Table dataSource={otData} columns={otCols} size="small" bordered
+                        pagination={{ defaultPageSize: 50, showSizeChanger: true, showTotal: t => `${t} dòng` }}
+                        scroll={{ x: 900 }} />
+                  }
+                </Card>
               </div>
             );
           })(),

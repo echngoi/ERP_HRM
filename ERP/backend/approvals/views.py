@@ -126,6 +126,9 @@ class RequestApprovalViewSet(viewsets.ModelViewSet):
 				"name": template.name,
 				"description": template.description,
 				"schema": template.schema,
+				"is_leave_request": template.is_leave_request,
+				"is_overtime_request": template.is_overtime_request,
+				"is_offsite_request": template.is_offsite_request,
 				"workflow": {
 					"id": template.workflow.id,
 					"name": template.workflow.name,
@@ -161,6 +164,9 @@ class RequestApprovalViewSet(viewsets.ModelViewSet):
 				req.status = Request.Status.APPROVED
 				req.save(update_fields=["status", "updated_at"])
 				complete_workflow_instance(req)
+				self._handle_leave_approval(req)
+				self._handle_overtime_approval(req)
+				self._handle_offsite_approval(req)
 				self._log(req, request.user, "APPROVAL_COMPLETED", "Workflow fully approved")
 				self._notify_request_owner(req, f"Your request '{req.title}' has been approved.")
 				return Response(self.get_serializer(approval).data, status=status.HTTP_200_OK)
@@ -209,6 +215,9 @@ class RequestApprovalViewSet(viewsets.ModelViewSet):
 				note="Auto-rejected because another approver rejected.",
 			)
 			reject_workflow_instance(req)
+			self._handle_leave_rejection(req)
+			self._handle_overtime_rejection(req)
+			self._handle_offsite_rejection(req)
 			self._log(req, request.user, "APPROVAL_REJECTED", note)
 			self._notify_request_owner(req, f"Your request '{req.title}' was rejected: {note}")
 
@@ -282,6 +291,61 @@ class RequestApprovalViewSet(viewsets.ModelViewSet):
 			content=f"Approval required for request: {req.title}",
 			notification_type=Notification.NotificationType.APPROVAL,
 		)
+
+	def _handle_leave_approval(self, req):
+		"""Khi đơn phê duyệt được duyệt hoàn tất, nếu liên kết nghỉ phép thì approve các LeaveRequestRecord và trừ phép."""
+		from decimal import Decimal
+		from attendance.models import LeaveRequestRecord, LeaveBalance
+		records = LeaveRequestRecord.objects.filter(
+			approval_request=req, status=LeaveRequestRecord.Status.PENDING,
+		)
+		if not records.exists():
+			return
+		for record in records:
+			record.status = LeaveRequestRecord.Status.APPROVED
+			record.save(update_fields=["status", "updated_at"])
+			if record.paid_type == "PAID":
+				year = record.leave_date.year
+				bal, _ = LeaveBalance.objects.get_or_create(
+					employee=record.employee, year=year,
+				)
+				bal.used_days += record.deducted_days
+				bal.save(update_fields=["used_days"])
+
+	def _handle_leave_rejection(self, req):
+		"""Khi đơn bị từ chối, reject tất cả LeaveRequestRecord liên quan."""
+		from attendance.models import LeaveRequestRecord
+		LeaveRequestRecord.objects.filter(
+			approval_request=req, status=LeaveRequestRecord.Status.PENDING,
+		).update(status=LeaveRequestRecord.Status.REJECTED)
+
+	def _handle_overtime_approval(self, req):
+		"""Khi đơn được duyệt hoàn tất, approve các OvertimeRecord liên quan."""
+		from attendance.models import OvertimeRecord
+		OvertimeRecord.objects.filter(
+			approval_request=req, status=OvertimeRecord.Status.PENDING,
+		).update(status=OvertimeRecord.Status.APPROVED)
+
+	def _handle_overtime_rejection(self, req):
+		"""Khi đơn bị từ chối, reject các OvertimeRecord liên quan."""
+		from attendance.models import OvertimeRecord
+		OvertimeRecord.objects.filter(
+			approval_request=req, status=OvertimeRecord.Status.PENDING,
+		).update(status=OvertimeRecord.Status.REJECTED)
+
+	def _handle_offsite_approval(self, req):
+		"""Khi đơn được duyệt hoàn tất, approve các OffsiteWorkRecord liên quan."""
+		from attendance.models import OffsiteWorkRecord
+		OffsiteWorkRecord.objects.filter(
+			approval_request=req, status=OffsiteWorkRecord.Status.PENDING,
+		).update(status=OffsiteWorkRecord.Status.APPROVED)
+
+	def _handle_offsite_rejection(self, req):
+		"""Khi đơn bị từ chối, reject các OffsiteWorkRecord liên quan."""
+		from attendance.models import OffsiteWorkRecord
+		OffsiteWorkRecord.objects.filter(
+			approval_request=req, status=OffsiteWorkRecord.Status.PENDING,
+		).update(status=OffsiteWorkRecord.Status.REJECTED)
 
 
 class WorkflowViewSet(viewsets.ModelViewSet):

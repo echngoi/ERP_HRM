@@ -7,16 +7,20 @@ import {
   FileTextOutlined,
   LogoutOutlined,
   MailOutlined,
+  TeamOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 import { Avatar, Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import AdminRoute from './components/AdminRoute';
+import ForceProfileUpdate from './components/ForceProfileUpdate';
 import NotificationDropdown from './components/NotificationDropdown';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useAuth } from './contexts/AuthContext';
 import AdminLayout from './layouts/AdminLayout';
 import { formatRoleDisplayName } from './pages/Admin/utils';
 import { getMyAttendanceInfo } from './services/attendanceApi';
+import { getMyEmployeeProfile } from './services/employeeApi';
 import './index.css';
 
 const DashboardPage = lazy(() => import('./pages/Dashboard'));
@@ -33,6 +37,7 @@ const AdminRolesPage = lazy(() => import('./pages/Admin/RolesPage'));
 const AdminWorkflowPage = lazy(() => import('./pages/Admin/WorkflowPage'));
 const AdminTemplatePage = lazy(() => import('./pages/Admin/TemplatePage'));
 const AdminQuickTitlesPage = lazy(() => import('./pages/Admin/QuickTitlesPage'));
+const AdminEmployeeConfigPage = lazy(() => import('./pages/Admin/EmployeeConfigPage'));
 
 // Attendance (ZK) pages
 const AttendanceDashboardPage = lazy(() => import('./pages/Attendance/Dashboard'));
@@ -44,6 +49,9 @@ const AttendanceReportPage = lazy(() => import('./pages/Attendance/AttendanceRep
 const MonthlyAttendancePage = lazy(() => import('./pages/Attendance/MonthlyAttendance'));
 const AttendancePermissionsPage = lazy(() => import('./pages/Attendance/AttendancePermissions'));
 const ShiftManagementPage = lazy(() => import('./pages/Attendance/ShiftManagement'));
+const LeaveManagementPage = lazy(() => import('./pages/Attendance/LeaveManagement'));
+const EmployeesPage = lazy(() => import('./pages/Employees'));
+const MyProfileModal = lazy(() => import('./pages/Employees/MyProfileModal'));
 
 const { Sider, Header, Content } = Layout;
 const { Text } = Typography;
@@ -59,11 +67,12 @@ const loadingStyle = {
 function App() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, isAuthenticated, logout, updateUser } = useAuth();
   const isLoginRoute = location.pathname === '/login';
   const isAdminRoute = location.pathname.startsWith('/admin');
 
   const [attInfo, setAttInfo] = useState(null);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
   const isAdmin = user?.roles?.includes('admin');
   const allowedPages = attInfo?.allowed_pages || (isAdmin ? [] : ['monthly']);
 
@@ -71,6 +80,13 @@ function App() {
     if (isAuthenticated) {
       getMyAttendanceInfo()
         .then(r => setAttInfo(r.data))
+        .catch(() => {});
+      getMyEmployeeProfile()
+        .then(r => {
+          if (r.data?.avatar_url !== undefined) {
+            updateUser({ avatar_url: r.data.avatar_url });
+          }
+        })
         .catch(() => {});
     }
   }, [isAuthenticated]);
@@ -90,6 +106,8 @@ function App() {
     'attendance-device': '/attendance/device',
     'attendance-permissions': '/attendance/permissions',
     'attendance-shifts': '/attendance/shifts',
+    'attendance-leave': '/attendance/leave',
+    employees: '/employees',
     admin: '/admin/users',
   };
 
@@ -103,10 +121,12 @@ function App() {
     if (p === '/attendance/device') return 'attendance-device';
     if (p === '/attendance/permissions') return 'attendance-permissions';
     if (p === '/attendance/shifts') return 'attendance-shifts';
+    if (p === '/attendance/leave') return 'attendance-leave';
     if (p === '/attendance') return 'attendance-dashboard';
     if (p.startsWith('/dashboard')) return 'dashboard';
     if (p.startsWith('/request') || p.startsWith('/requests')) return 'requests';
     if (p.startsWith('/approval') || p.startsWith('/approvals')) return 'approvals';
+    if (p.startsWith('/employees')) return 'employees';
     if (p.startsWith('/admin')) return 'admin';
     if (p.startsWith('/inbox') || p.startsWith('/messages/')) return 'inbox';
     return 'dashboard';
@@ -122,8 +142,15 @@ function App() {
   const primaryRole = Array.isArray(user?.roles) && user.roles.length > 0 ? user.roles[0] : '';
 
   const avatarText = String(displayName).charAt(0).toUpperCase();
+  const avatarUrl = user?.avatar_url || null;
 
   const userMenuItems = [
+    {
+      key: 'my-profile',
+      icon: <UserOutlined />,
+      label: 'Thông tin nhân viên',
+    },
+    { type: 'divider' },
     {
       key: 'logout',
       icon: <LogoutOutlined />,
@@ -132,6 +159,10 @@ function App() {
   ];
 
   const handleUserMenuClick = ({ key }) => {
+    if (key === 'my-profile') {
+      setProfileModalOpen(true);
+      return;
+    }
     if (key !== 'logout') return;
     logout();
     navigate('/login', { replace: true });
@@ -159,6 +190,11 @@ function App() {
       label: 'Báo cáo nội bộ',
     },
     {
+      key: 'employees',
+      icon: <TeamOutlined />,
+      label: 'Quản lý nhân viên',
+    },
+    {
       key: 'attendance',
       icon: <ClockCircleOutlined />,
       label: 'Chấm công',
@@ -172,6 +208,7 @@ function App() {
         ...(allowedPages.includes('device') ? [{ key: 'attendance-device', label: 'Thiết bị & Cài đặt' }] : []),
         ...(allowedPages.includes('permissions') ? [{ key: 'attendance-permissions', label: 'Phân quyền chấm công' }] : []),
         ...(allowedPages.includes('shifts') ? [{ key: 'attendance-shifts', label: 'Quản lý ca' }] : []),
+        { key: 'attendance-leave', label: 'Quản lý nghỉ phép' },
       ],
     },
     ...(user?.roles?.includes('admin')
@@ -214,6 +251,7 @@ function App() {
             <Route path="workflow" element={<AdminWorkflowPage />} />
             <Route path="template" element={<AdminTemplatePage />} />
             <Route path="quick-titles" element={<AdminQuickTitlesPage />} />
+            <Route path="employee-config" element={<AdminEmployeeConfigPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/admin/users" replace />} />
         </Routes>
@@ -222,6 +260,7 @@ function App() {
   }
 
   return (
+    <ForceProfileUpdate>
     <Layout className="erp-app-layout">
       <Sider theme="light" width={220} className="erp-app-sider">
         <div className="erp-app-brand">
@@ -245,7 +284,7 @@ function App() {
               trigger={['click']}
             >
               <Space size={8} className="erp-app-user-trigger">
-                <Avatar className="erp-app-user-trigger__avatar">{avatarText}</Avatar>
+                <Avatar src={avatarUrl} className="erp-app-user-trigger__avatar">{!avatarUrl && avatarText}</Avatar>
                 <div className="erp-app-user-trigger__meta">
                   <Text className="erp-app-user-trigger__name">{displayName}</Text>
                   <Text className="erp-app-user-trigger__role">{formatRoleDisplayName(primaryRole)}</Text>
@@ -270,6 +309,9 @@ function App() {
               <Route path="/messages/:id" element={<ProtectedRoute><MessageDetailPage /></ProtectedRoute>} />
 
               {/* Attendance (ZK) routes */}
+              <Route path="/employees" element={<ProtectedRoute><EmployeesPage /></ProtectedRoute>} />
+
+              {/* Attendance (ZK) routes */}
               <Route path="/attendance" element={<ProtectedRoute><AttendanceDashboardPage /></ProtectedRoute>} />
               <Route path="/attendance/logs" element={<ProtectedRoute><AttendanceLogsPage /></ProtectedRoute>} />
               <Route path="/attendance/employees" element={<ProtectedRoute><AttendanceEmployeesPage /></ProtectedRoute>} />
@@ -279,6 +321,7 @@ function App() {
               <Route path="/attendance/monthly" element={<ProtectedRoute><MonthlyAttendancePage /></ProtectedRoute>} />
               <Route path="/attendance/permissions" element={<ProtectedRoute><AttendancePermissionsPage /></ProtectedRoute>} />
               <Route path="/attendance/shifts" element={<ProtectedRoute><ShiftManagementPage /></ProtectedRoute>} />
+              <Route path="/attendance/leave" element={<ProtectedRoute><LeaveManagementPage /></ProtectedRoute>} />
 
               <Route path="/login" element={<Navigate to="/dashboard" replace />} />
               <Route path="*" element={<ProtectedRoute><Navigate to="/dashboard" replace /></ProtectedRoute>} />
@@ -286,7 +329,12 @@ function App() {
           </Suspense>
         </Content>
       </Layout>
+
+      <Suspense fallback={null}>
+        <MyProfileModal open={profileModalOpen} onClose={() => setProfileModalOpen(false)} />
+      </Suspense>
     </Layout>
+    </ForceProfileUpdate>
   );
 }
 

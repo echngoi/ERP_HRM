@@ -168,15 +168,10 @@ class RequestApproval(models.Model):
 class ApprovalTemplate(models.Model):
 	"""Reusable template for approval form, mapped to a specific workflow."""
 
-	class TemplateType(models.TextChoices):
-		LEAVE = "LEAVE", "Leave"
-		PURCHASE = "PURCHASE", "Purchase"
-		DOCUMENT = "DOCUMENT", "Document"
-
 	type = models.CharField(
-		max_length=20,
-		choices=TemplateType.choices,
+		max_length=100,
 		db_index=True,
+		help_text="Loại phê duyệt do người dùng tự đặt tên",
 	)
 	name = models.CharField(max_length=255)
 	description = models.TextField(blank=True)
@@ -191,6 +186,21 @@ class ApprovalTemplate(models.Model):
 		related_name="templates",
 	)
 	is_active = models.BooleanField(default=True, db_index=True)
+	is_leave_request = models.BooleanField(
+		"Liên kết với đơn xin nghỉ phép",
+		default=False,
+		help_text="Khi bật, tạo yêu cầu sẽ hiển thị form nghỉ phép và tự động trừ phép khi duyệt.",
+	)
+	is_overtime_request = models.BooleanField(
+		"Liên kết với đơn làm thêm",
+		default=False,
+		help_text="Khi bật, tạo yêu cầu sẽ hiển thị form đăng ký làm thêm.",
+	)
+	is_offsite_request = models.BooleanField(
+		"Liên kết với yêu cầu làm việc ngoại viện",
+		default=False,
+		help_text="Khi bật, tạo yêu cầu sẽ hiển thị form đăng ký làm việc ngoại viện.",
+	)
 	created_at = models.DateTimeField(auto_now_add=True)
 	updated_at = models.DateTimeField(auto_now=True)
 

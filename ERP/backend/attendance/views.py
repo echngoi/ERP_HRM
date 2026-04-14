@@ -13,8 +13,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.decorators import api_view
 
-from .models import Employee, AttendanceLog, SyncLog, AttendancePermission, WorkShift, LateEarlyRule, PenaltyConfig
-from .serializers import EmployeeSerializer, AttendanceLogSerializer, SyncLogSerializer, AttendancePermissionSerializer, WorkShiftSerializer, LateEarlyRuleSerializer, PenaltyConfigSerializer
+from .models import Employee, AttendanceLog, SyncLog, AttendancePermission, WorkShift, LateEarlyRule, PenaltyConfig, LeaveConfig, LeaveBalance, LeaveRequestRecord, OvertimeRecord, OffsiteWorkRecord
+from .serializers import EmployeeSerializer, AttendanceLogSerializer, SyncLogSerializer, AttendancePermissionSerializer, WorkShiftSerializer, LateEarlyRuleSerializer, PenaltyConfigSerializer, LeaveConfigSerializer, LeaveBalanceSerializer, LeaveRequestRecordSerializer, OvertimeRecordSerializer, OffsiteWorkRecordSerializer
 from .permissions import (
     get_allowed_pages,
     can_view_all_on_page,
@@ -289,7 +289,7 @@ class EmployeeListView(APIView):
 
     def get(self, request):
         user = request.user
-        employees = Employee.objects.select_related('linked_user__department', 'shift').all()
+        employees = Employee.objects.select_related('linked_user__department', 'linked_user__employee_profile', 'shift').all()
         # By default only return active; admin can pass ?show_all=1
         if not request.query_params.get('show_all'):
             employees = employees.filter(is_active=True)
@@ -299,7 +299,7 @@ class EmployeeListView(APIView):
                 employees = employees.filter(pk=att_emp.pk)
             else:
                 employees = employees.none()
-        serializer = EmployeeSerializer(employees, many=True)
+        serializer = EmployeeSerializer(employees, many=True, context={'request': request})
         return Response({'results': serializer.data, 'total': employees.count()})
 
 
@@ -730,9 +730,9 @@ def _build_report_data(date_from, date_to, user_id=None):
         user_day_logs[(log.user_id, day)].append(log)
 
     # Get all employees (or filtered), only active ones for reports
-    emp_qs = Employee.objects.select_related('linked_user__department', 'shift').filter(is_active=True)
+    emp_qs = Employee.objects.select_related('linked_user__department', 'linked_user__employee_profile', 'shift').filter(is_active=True)
     if user_id:
-        emp_qs = Employee.objects.select_related('linked_user__department', 'shift').filter(user_id=user_id)
+        emp_qs = Employee.objects.select_related('linked_user__department', 'linked_user__employee_profile', 'shift').filter(user_id=user_id)
     employees = {e.user_id: e for e in emp_qs}
 
     # Preload late/early rules and penalty configs per shift
@@ -887,6 +887,7 @@ def _build_report_data(date_from, date_to, user_id=None):
             'username': linked.username if linked else '',
             'employee_code': emp.employee_code or '',
             'employee_name': emp.display_name,
+            'employee_profile_id': getattr(linked, 'employee_profile', None) and linked.employee_profile.id if linked else None,
             'department': dept,
             'shift': shift_info,
             'summary': {
@@ -1021,11 +1022,32 @@ class AttendanceReportExportView(APIView):
             weekend_fill = PatternFill('solid', fgColor='F5F5F5')
             header_fill_grid = PatternFill('solid', fgColor='1677ff')
             summary_fill = PatternFill('solid', fgColor='E6F7FF')
+            leave_fill = PatternFill('solid', fgColor='E6F4FF')
+            offsite_fill = PatternFill('solid', fgColor='F9F0FF')
 
             day_labels = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
 
             num_days = len(days)
-            total_cols = 2 + num_days + 2  # STT, Họ tên, days..., Đi làm, Vắng
+            # STT, Mã NV, Họ tên, days..., Công TT, Công chuẩn
+            total_cols = 3 + num_days + 2
+
+            # ── Build leave & offsite lookups ──
+            leave_qs = LeaveRequestRecord.objects.filter(
+                leave_date__gte=date_from, leave_date__lte=date_to, status='APPROVED',
+            )
+            offsite_qs = OffsiteWorkRecord.objects.filter(
+                work_date__gte=date_from, work_date__lte=date_to, status='APPROVED',
+            )
+            # { (employee_profile_id, 'YYYY-MM-DD'): record }
+            leave_lookup = {}
+            for rec in leave_qs:
+                leave_lookup[(rec.employee_id, rec.leave_date.strftime('%Y-%m-%d'))] = rec
+            offsite_lookup = {}
+            for rec in offsite_qs:
+                offsite_lookup[(rec.employee_id, rec.work_date.strftime('%Y-%m-%d'))] = rec
+
+            # Standard days = total days - Sundays
+            std_days = sum(1 for d in days if d.isoweekday() != 7)
 
             # Title row
             ws_grid.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
@@ -1034,8 +1056,8 @@ class AttendanceReportExportView(APIView):
             title_cell_g.font = Font(bold=True, size=14)
             title_cell_g.alignment = Alignment(horizontal='center')
 
-            # Header row 1: STT, Họ tên, day-of-week labels, Đi làm, Vắng
-            # Header row 2: (merged), (merged), day numbers, (merged), (merged)
+            # Header row 1 & 2
+            # STT (merged rows 3-4)
             ws_grid.merge_cells(start_row=3, start_column=1, end_row=4, end_column=1)
             stt_cell = ws_grid.cell(row=3, column=1, value='STT')
             stt_cell.font = header_font
@@ -1045,18 +1067,29 @@ class AttendanceReportExportView(APIView):
             ws_grid.cell(row=4, column=1).border = thin_border
             ws_grid.cell(row=4, column=1).fill = header_fill_grid
 
+            # Mã NV (merged rows 3-4)
             ws_grid.merge_cells(start_row=3, start_column=2, end_row=4, end_column=2)
-            name_cell = ws_grid.cell(row=3, column=2, value='Họ tên')
+            code_cell = ws_grid.cell(row=3, column=2, value='Mã NV')
+            code_cell.font = header_font
+            code_cell.fill = header_fill_grid
+            code_cell.alignment = header_align
+            code_cell.border = thin_border
+            ws_grid.cell(row=4, column=2).border = thin_border
+            ws_grid.cell(row=4, column=2).fill = header_fill_grid
+
+            # Họ tên (merged rows 3-4)
+            ws_grid.merge_cells(start_row=3, start_column=3, end_row=4, end_column=3)
+            name_cell = ws_grid.cell(row=3, column=3, value='Họ tên')
             name_cell.font = header_font
             name_cell.fill = header_fill_grid
             name_cell.alignment = header_align
             name_cell.border = thin_border
-            ws_grid.cell(row=4, column=2).border = thin_border
-            ws_grid.cell(row=4, column=2).fill = header_fill_grid
+            ws_grid.cell(row=4, column=3).border = thin_border
+            ws_grid.cell(row=4, column=3).fill = header_fill_grid
 
             from datetime import date as date_cls
             for i, day in enumerate(days):
-                col = 3 + i
+                col = 4 + i
                 dow = day.isoweekday() % 7  # 0=Sun
                 is_weekend = dow == 0 or dow == 6
 
@@ -1074,9 +1107,9 @@ class AttendanceReportExportView(APIView):
                 c2.alignment = header_align
                 c2.border = thin_border
 
-            # Đi làm, Vắng header (merged rows 3-4)
-            for offset, label in [(0, 'Đi làm'), (1, 'Vắng')]:
-                col = 3 + num_days + offset
+            # Công TT, Công chuẩn header (merged rows 3-4)
+            for offset, label in [(0, 'Công TT'), (1, 'Công chuẩn')]:
+                col = 4 + num_days + offset
                 ws_grid.merge_cells(start_row=3, start_column=col, end_row=4, end_column=col)
                 c = ws_grid.cell(row=3, column=col, value=label)
                 c.font = header_font
@@ -1086,6 +1119,40 @@ class AttendanceReportExportView(APIView):
                 ws_grid.cell(row=4, column=col).border = thin_border
                 ws_grid.cell(row=4, column=col).fill = header_fill_grid
 
+            # Helper: calc work-day value for a single day cell
+            def _calc_day_val(info, lr, osr):
+                """Return (value, is_leave, is_offsite)."""
+                val = 0.0
+                has_leave = False
+                has_offsite = False
+                # Paid leave
+                if lr and lr.paid_type == 'PAID':
+                    has_leave = True
+                    if lr.leave_type == 'FULL_DAY':
+                        return (1, True, False)
+                    val += 0.5
+                elif lr:
+                    has_leave = True  # unpaid leave - mark but 0 work value
+                # Offsite
+                if osr:
+                    has_offsite = True
+                    if osr.work_type == 'FULL_DAY':
+                        return (min(val + 1, 1), has_leave, True)
+                    val += 0.5
+                if val >= 1:
+                    return (1, has_leave, has_offsite)
+                # Attendance
+                if info and info['status'] != 'absent':
+                    ci = info.get('check_in') or ''
+                    co = info.get('check_out') or ''
+                    has_morning = ci and ci < '12:00'
+                    has_afternoon = co and co >= '17:00'
+                    if has_morning and has_afternoon:
+                        val += 1 if val == 0 else 0.5
+                    elif has_morning or has_afternoon:
+                        val += 0.5
+                return (min(val, 1), has_leave, has_offsite)
+
             # Data rows
             for idx, row_data in enumerate(rows, 1):
                 r = 4 + idx
@@ -1093,75 +1160,110 @@ class AttendanceReportExportView(APIView):
                 for d in row_data['daily']:
                     day_map[d['date']] = d
 
+                emp_profile_id = row_data.get('employee_profile_id')
+
                 # STT
                 ws_grid.cell(row=r, column=1, value=idx).border = thin_border
 
-                # Name + info
-                name_parts = [row_data['employee_name']]
-                if row_data.get('department'):
-                    name_parts.append(row_data['department'])
-                if row_data.get('shift'):
-                    name_parts.append(row_data['shift']['name'])
-                # Show system username if linked, otherwise machine user_id
-                display_id = row_data['username'] if row_data.get('username') else row_data['user_id']
-                name_parts.append(f"TK: {display_id}")
-                nc = ws_grid.cell(row=r, column=2, value='\n'.join(name_parts))
+                # Mã NV: username if available, else machine user_id
+                display_id = row_data['username'] if row_data.get('username') else str(row_data['user_id'])
+                id_cell = ws_grid.cell(row=r, column=2, value=display_id)
+                id_cell.alignment = Alignment(horizontal='center', vertical='center')
+                id_cell.border = thin_border
+
+                # Họ tên (no username appended)
+                nc = ws_grid.cell(row=r, column=3, value=row_data['employee_name'])
                 nc.alignment = Alignment(vertical='center', wrap_text=True)
                 nc.border = thin_border
 
+                actual_days = 0.0
                 for i, day in enumerate(days):
-                    col = 3 + i
+                    col = 4 + i
                     date_str = day.strftime('%Y-%m-%d')
                     dow = day.isoweekday() % 7
                     is_weekend = dow == 0 or dow == 6
                     info = day_map.get(date_str)
+
+                    # Lookup leave & offsite
+                    lr = leave_lookup.get((emp_profile_id, date_str)) if emp_profile_id else None
+                    osr = offsite_lookup.get((emp_profile_id, date_str)) if emp_profile_id else None
+
+                    day_val, has_leave, has_offsite = _calc_day_val(info, lr, osr)
+                    actual_days += day_val
 
                     cell = ws_grid.cell(row=r, column=col)
                     cell.border = thin_border
                     cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
                     cell.font = Font(size=9)
 
-                    if is_weekend and (not info or info['status'] == 'absent'):
+                    if is_weekend and not lr and not osr and (not info or info['status'] == 'absent'):
                         cell.value = '—'
                         cell.fill = weekend_fill
                         cell.font = Font(size=9, color='BBBBBB')
+                    elif has_leave and not has_offsite and lr.leave_type == 'FULL_DAY':
+                        cell.value = 'P'
+                        cell.fill = leave_fill
+                        cell.font = Font(size=9, color='1677FF', bold=True)
+                    elif has_offsite and not has_leave and osr.work_type == 'FULL_DAY':
+                        cell.value = 'NV'
+                        cell.fill = offsite_fill
+                        cell.font = Font(size=9, color='722ED1', bold=True)
+                    elif has_leave or has_offsite:
+                        # Mixed or half-day
+                        parts = []
+                        if has_leave:
+                            parts.append('P')
+                        if has_offsite:
+                            parts.append('NV')
+                        if info and info['status'] != 'absent':
+                            ci = (info['check_in'] or '')[:5]
+                            co = (info['check_out'] or '')[:5]
+                            if ci or co:
+                                parts.append(f"{ci}-{co}")
+                        cell.value = '+'.join(parts)
+                        cell.fill = leave_fill if has_leave else offsite_fill
+                        cell.font = Font(size=8, color='1677FF' if has_leave else '722ED1')
                     elif not info or info['status'] == 'absent':
                         cell.value = 'Vắng'
                         cell.fill = absent_fill_grid
                         cell.font = Font(size=9, color='FF4D4F', bold=True)
                     else:
-                        # Show check-in / check-out
-                        ci = (info['check_in'] or '—')[:5]
-                        co = (info['check_out'] or '—')[:5]
-                        cell.value = f"{ci}\n{co}"
+                        if day_val >= 1:
+                            cell.value = 1
+                        elif day_val == 0.5:
+                            cell.value = 0.5
+                        else:
+                            cell.value = f"{(info['check_in'] or '—')[:5]}\n{(info['check_out'] or '—')[:5]}"
                         if 'late' in info['status']:
                             cell.fill = late_fill_grid
                             cell.font = Font(size=9, color='D46B08')
                         else:
                             cell.fill = present_fill
 
-                # Summary cols
-                s = row_data['summary']
-                pc = ws_grid.cell(row=r, column=3 + num_days, value=s['present'])
+                # Công TT
+                display_actual = int(actual_days) if actual_days == int(actual_days) else round(actual_days, 1)
+                pc = ws_grid.cell(row=r, column=4 + num_days, value=display_actual)
                 pc.border = thin_border
                 pc.alignment = Alignment(horizontal='center', vertical='center')
                 pc.fill = summary_fill
                 pc.font = Font(bold=True, color='52C41A')
 
-                ac = ws_grid.cell(row=r, column=3 + num_days + 1, value=s['absent'])
+                # Công chuẩn
+                ac = ws_grid.cell(row=r, column=4 + num_days + 1, value=std_days)
                 ac.border = thin_border
                 ac.alignment = Alignment(horizontal='center', vertical='center')
                 ac.fill = summary_fill
-                ac.font = Font(bold=True, color='FF4D4F')
+                ac.font = Font(bold=True, color='1677FF')
 
             # Column widths
             ws_grid.column_dimensions['A'].width = 5
-            ws_grid.column_dimensions['B'].width = 22
+            ws_grid.column_dimensions['B'].width = 12
+            ws_grid.column_dimensions['C'].width = 22
             for i in range(num_days):
-                col_letter = openpyxl.utils.get_column_letter(3 + i)
+                col_letter = openpyxl.utils.get_column_letter(4 + i)
                 ws_grid.column_dimensions[col_letter].width = 7
-            ws_grid.column_dimensions[openpyxl.utils.get_column_letter(3 + num_days)].width = 8
-            ws_grid.column_dimensions[openpyxl.utils.get_column_letter(3 + num_days + 1)].width = 7
+            ws_grid.column_dimensions[openpyxl.utils.get_column_letter(4 + num_days)].width = 9
+            ws_grid.column_dimensions[openpyxl.utils.get_column_letter(4 + num_days + 1)].width = 9
 
             # Row height for data rows
             for r in range(5, 5 + len(rows)):
@@ -1824,3 +1926,426 @@ class PenaltyConfigBulkView(APIView):
             )
             created.append(obj)
         return Response(PenaltyConfigSerializer(created, many=True).data)
+
+
+# ── Leave Management ──────────────────────────────────────
+
+from employees.models import Employee as EmpProfile
+from datetime import date
+
+
+def _calculate_entitled_days(employee, year, config):
+    """
+    Tính số ngày phép được hưởng của nhân viên trong năm.
+    - Dựa trên contract_start của trạng thái HĐ cấu hình.
+    - Mỗi tháng làm việc = 1 ngày phép (tối đa annual_leave_days).
+    - Quy tắc ngày 15: nếu ngày bắt đầu HĐ >= 15 → tháng đó tính tròn,
+      ngày <= 14 → không tính tháng đó.
+    """
+    start = employee.contract_start
+    if not start:
+        return 0
+
+    # Chỉ tính nếu trạng thái HĐ match hoặc đã nâng cấp (INDEFINITE tính cả trước đó là FIXED_TERM)
+    year_start = date(year, 1, 1)
+    year_end = date(year, 12, 31)
+    today = date.today()
+    effective_end = min(today, year_end)
+
+    if start > effective_end:
+        return 0
+
+    effective_start = max(start, year_start)
+
+    # Tính tháng
+    months = 0
+    m, y = effective_start.month, effective_start.year
+    while date(y, m, 1) <= effective_end:
+        if y == effective_start.year and m == effective_start.month:
+            # Tháng đầu tiên: quy tắc ngày 15
+            if effective_start == start:
+                # Đây là tháng bắt đầu HĐ thực sự
+                if start.day <= 15:
+                    months += 1
+                # > 15: không tính tháng đầu
+            else:
+                # effective_start là đầu năm, tháng đầy đủ
+                months += 1
+        else:
+            # Kiểm tra tháng này có nằm trước today không
+            from calendar import monthrange
+            last_day = monthrange(y, m)[1]
+            month_end = date(y, m, last_day)
+            if today >= date(y, m, 1):
+                months += 1
+
+        # next month
+        if m == 12:
+            m, y = 1, y + 1
+        else:
+            m += 1
+
+    return min(months, config.annual_leave_days)
+
+
+def _get_entitled_map(employees, year, config):
+    """Return dict {employee_id: entitled_days}."""
+    result = {}
+    for emp in employees:
+        result[emp.id] = _calculate_entitled_days(emp, year, config)
+    return result
+
+
+class LeaveConfigView(APIView):
+    """GET/PUT cấu hình nghỉ phép (singleton)."""
+
+    def get(self, request):
+        config = LeaveConfig.get_config()
+        return Response(LeaveConfigSerializer(config).data)
+
+    def put(self, request):
+        if not request.user.user_roles.filter(role__name='admin').exists():
+            return Response({'detail': 'Chỉ admin mới được cấu hình.'}, status=status.HTTP_403_FORBIDDEN)
+        config = LeaveConfig.get_config()
+        ser = LeaveConfigSerializer(config, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response(ser.data)
+
+
+class LeaveBalanceListView(APIView):
+    """GET: Danh sách phép nhân viên theo năm, POST: tạo/cập nhật."""
+
+    def get(self, request):
+        year = int(request.query_params.get('year', date.today().year))
+        config = LeaveConfig.get_config()
+
+        employees = EmpProfile.objects.select_related('user', 'user__department').filter(
+            user__is_active=True,
+        )
+
+        # Ensure LeaveBalance records exist for all active employees in this year
+        existing_ids = set(
+            LeaveBalance.objects.filter(year=year).values_list('employee_id', flat=True)
+        )
+        to_create = []
+        for emp in employees:
+            if emp.id not in existing_ids:
+                to_create.append(LeaveBalance(employee=emp, year=year))
+        if to_create:
+            LeaveBalance.objects.bulk_create(to_create, ignore_conflicts=True)
+
+        balances = LeaveBalance.objects.filter(year=year).select_related(
+            'employee', 'employee__user', 'employee__user__department',
+        ).order_by('employee__user__full_name')
+
+        entitled = _get_entitled_map(
+            [b.employee for b in balances], year, config,
+        )
+        ser = LeaveBalanceSerializer(
+            balances, many=True, context={'entitled': entitled},
+        )
+        return Response(ser.data)
+
+    def post(self, request):
+        """Cập nhật used_days / carried_over_days / note cho một balance."""
+        if not request.user.user_roles.filter(role__name='admin').exists():
+            return Response({'detail': 'Chỉ admin.'}, status=status.HTTP_403_FORBIDDEN)
+        bal_id = request.data.get('id')
+        if not bal_id:
+            return Response({'detail': 'id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            bal = LeaveBalance.objects.get(pk=bal_id)
+        except LeaveBalance.DoesNotExist:
+            return Response({'detail': 'Không tìm thấy.'}, status=status.HTTP_404_NOT_FOUND)
+
+        for f in ('used_days', 'carried_over_days', 'note'):
+            if f in request.data:
+                setattr(bal, f, request.data[f])
+        bal.save()
+        config = LeaveConfig.get_config()
+        entitled = _get_entitled_map([bal.employee], bal.year, config)
+        return Response(LeaveBalanceSerializer(bal, context={'entitled': entitled}).data)
+
+
+class MyLeaveView(APIView):
+    """GET: phép của user đang đăng nhập."""
+
+    def get(self, request):
+        year = int(request.query_params.get('year', date.today().year))
+        emp = getattr(request.user, 'employee_profile', None)
+        if not emp:
+            return Response({'detail': 'Không tìm thấy hồ sơ nhân viên.'}, status=status.HTTP_404_NOT_FOUND)
+        config = LeaveConfig.get_config()
+        bal, _ = LeaveBalance.objects.get_or_create(employee=emp, year=year)
+        entitled = _get_entitled_map([emp], year, config)
+        return Response(LeaveBalanceSerializer(bal, context={'entitled': entitled}).data)
+
+
+class LeaveRequestCreateView(APIView):
+    """POST: Tạo bản ghi nghỉ phép khi nhân viên tạo đơn qua approval."""
+
+    def post(self, request):
+        from decimal import Decimal
+        emp = getattr(request.user, 'employee_profile', None)
+        if not emp:
+            return Response({'detail': 'Không tìm thấy hồ sơ nhân viên.'}, status=status.HTTP_404_NOT_FOUND)
+
+        leave_dates = request.data.get('leave_dates', [])
+        leave_type = request.data.get('leave_type', 'FULL_DAY')
+        paid_type = request.data.get('paid_type', 'PAID')
+        reason = request.data.get('reason', '')
+        approval_request_id = request.data.get('approval_request_id')
+
+        if not leave_dates:
+            return Response({'detail': 'Cần chọn ít nhất một ngày nghỉ.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        deducted = Decimal('0.5') if leave_type in ('MORNING', 'AFTERNOON') else Decimal('1')
+
+        # Validate remaining balance for PAID leave
+        if paid_type == 'PAID':
+            year = date.today().year
+            config = LeaveConfig.get_config()
+            bal, _ = LeaveBalance.objects.get_or_create(employee=emp, year=year)
+            entitled = _calculate_entitled_days(emp, year, config)
+            remaining = Decimal(str(entitled)) + bal.carried_over_days - bal.used_days
+            total_deduct = deducted * len(leave_dates)
+            if total_deduct > remaining:
+                return Response(
+                    {'detail': f'Số ngày phép còn lại ({remaining}) không đủ cho {total_deduct} ngày xin nghỉ.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        records = []
+        for d in leave_dates:
+            records.append(LeaveRequestRecord(
+                employee=emp,
+                approval_request_id=approval_request_id,
+                leave_date=d,
+                leave_type=leave_type,
+                paid_type=paid_type,
+                deducted_days=deducted,
+                reason=reason,
+            ))
+        created = LeaveRequestRecord.objects.bulk_create(records)
+        ser = LeaveRequestRecordSerializer(created, many=True)
+        return Response(ser.data, status=status.HTTP_201_CREATED)
+
+
+class LeaveRequestListView(APIView):
+    """GET: Danh sách nghỉ phép. Admin/Manager thấy tất cả, NV thấy của mình."""
+
+    def get(self, request):
+        qs = LeaveRequestRecord.objects.select_related('employee', 'employee__user')
+        is_admin = request.user.user_roles.filter(role__name__in=['admin', 'manager']).exists()
+        if not is_admin:
+            emp = getattr(request.user, 'employee_profile', None)
+            if not emp:
+                return Response([])
+            qs = qs.filter(employee=emp)
+
+        year = request.query_params.get('year')
+        month = request.query_params.get('month')
+        employee_id = request.query_params.get('employee_id')
+        req_status = request.query_params.get('status')
+
+        if year:
+            qs = qs.filter(leave_date__year=int(year))
+        if month:
+            qs = qs.filter(leave_date__month=int(month))
+        if employee_id:
+            qs = qs.filter(employee_id=int(employee_id))
+        if req_status:
+            qs = qs.filter(status=req_status)
+
+        ser = LeaveRequestRecordSerializer(qs[:500], many=True)
+        return Response(ser.data)
+
+
+class LeaveRequestCancelView(APIView):
+    """POST: Hủy đơn nghỉ phép, hoàn lại ngày phép nếu đã trừ."""
+
+    def post(self, request, pk):
+        from decimal import Decimal
+        try:
+            record = LeaveRequestRecord.objects.select_related('employee').get(pk=pk)
+        except LeaveRequestRecord.DoesNotExist:
+            return Response({'detail': 'Không tìm thấy.'}, status=status.HTTP_404_NOT_FOUND)
+
+        emp = getattr(request.user, 'employee_profile', None)
+        is_admin = request.user.user_roles.filter(role__name__in=['admin', 'manager']).exists()
+        if not is_admin and (not emp or record.employee_id != emp.id):
+            return Response({'detail': 'Không có quyền.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if record.status == 'CANCELLED':
+            return Response({'detail': 'Đã hủy rồi.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        was_approved = record.status == 'APPROVED'
+        record.status = 'CANCELLED'
+        record.save(update_fields=['status', 'updated_at'])
+
+        # Refund days if the record was approved and paid
+        if was_approved and record.paid_type == 'PAID':
+            year = record.leave_date.year
+            try:
+                bal = LeaveBalance.objects.get(employee=record.employee, year=year)
+                bal.used_days = max(Decimal('0'), bal.used_days - record.deducted_days)
+                bal.save(update_fields=['used_days'])
+            except LeaveBalance.DoesNotExist:
+                pass
+
+        # Also cancel sibling records from same approval request
+        if record.approval_request_id:
+            siblings = LeaveRequestRecord.objects.filter(
+                approval_request_id=record.approval_request_id,
+            ).exclude(pk=pk).exclude(status='CANCELLED')
+            for sib in siblings:
+                sib_was_approved = sib.status == 'APPROVED'
+                sib.status = 'CANCELLED'
+                sib.save(update_fields=['status', 'updated_at'])
+                if sib_was_approved and sib.paid_type == 'PAID':
+                    try:
+                        bal = LeaveBalance.objects.get(employee=sib.employee, year=sib.leave_date.year)
+                        bal.used_days = max(Decimal('0'), bal.used_days - sib.deducted_days)
+                        bal.save(update_fields=['used_days'])
+                    except LeaveBalance.DoesNotExist:
+                        pass
+
+        return Response({'detail': 'Đã hủy thành công.'})
+
+
+# ── Overtime Views ──────────────────────────────────────────
+
+
+class OvertimeCreateView(APIView):
+    """POST: Tạo bản ghi làm thêm khi nhân viên tạo đơn qua approval."""
+
+    def post(self, request):
+        from decimal import Decimal
+        emp = getattr(request.user, 'employee_profile', None)
+        if not emp:
+            return Response({'detail': 'Không tìm thấy hồ sơ nhân viên.'}, status=status.HTTP_404_NOT_FOUND)
+
+        start_time = request.data.get('start_time')
+        end_time = request.data.get('end_time')
+        ot_date = request.data.get('ot_date')
+        reason = request.data.get('reason', '')
+        approval_request_id = request.data.get('approval_request_id')
+
+        if not start_time or not end_time or not ot_date:
+            return Response({'detail': 'Vui lòng nhập đầy đủ ngày và giờ làm thêm.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        from datetime import datetime as dt
+        t_start = dt.strptime(start_time, '%H:%M').time()
+        t_end = dt.strptime(end_time, '%H:%M').time()
+        delta_minutes = (dt.combine(dt.today(), t_end) - dt.combine(dt.today(), t_start)).total_seconds() / 60
+        if delta_minutes <= 0:
+            delta_minutes += 24 * 60  # cross midnight
+        ot_hours = round(Decimal(str(delta_minutes / 60)), 1)
+
+        record = OvertimeRecord.objects.create(
+            employee=emp,
+            approval_request_id=approval_request_id,
+            ot_date=ot_date,
+            start_time=t_start,
+            end_time=t_end,
+            ot_hours=ot_hours,
+            reason=reason,
+        )
+        ser = OvertimeRecordSerializer(record)
+        return Response(ser.data, status=status.HTTP_201_CREATED)
+
+
+class OvertimeListView(APIView):
+    """GET: Danh sách làm thêm. Admin/Manager thấy tất cả, NV thấy của mình."""
+
+    def get(self, request):
+        qs = OvertimeRecord.objects.select_related('employee', 'employee__user')
+        is_admin = request.user.user_roles.filter(role__name__in=['admin', 'manager']).exists()
+        if not is_admin:
+            emp = getattr(request.user, 'employee_profile', None)
+            if not emp:
+                return Response([])
+            qs = qs.filter(employee=emp)
+
+        year = request.query_params.get('year')
+        month = request.query_params.get('month')
+        employee_id = request.query_params.get('employee_id')
+        req_status = request.query_params.get('status')
+
+        if year:
+            qs = qs.filter(ot_date__year=int(year))
+        if month:
+            qs = qs.filter(ot_date__month=int(month))
+        if employee_id:
+            qs = qs.filter(employee_id=int(employee_id))
+        if req_status:
+            qs = qs.filter(status=req_status)
+
+        ser = OvertimeRecordSerializer(qs[:500], many=True)
+        return Response(ser.data)
+
+
+# ── Offsite Work Views ──────────────────────────────────────
+
+
+class OffsiteCreateView(APIView):
+    """POST: Tạo bản ghi ngoại viện khi nhân viên tạo đơn qua approval."""
+
+    def post(self, request):
+        emp = getattr(request.user, 'employee_profile', None)
+        if not emp:
+            return Response({'detail': 'Không tìm thấy hồ sơ nhân viên.'}, status=status.HTTP_404_NOT_FOUND)
+
+        work_dates = request.data.get('work_dates', [])
+        work_type = request.data.get('work_type', 'FULL_DAY')
+        location = request.data.get('location', '')
+        reason = request.data.get('reason', '')
+        approval_request_id = request.data.get('approval_request_id')
+
+        if not work_dates:
+            return Response({'detail': 'Cần chọn ít nhất một ngày làm việc.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        records = []
+        for d in work_dates:
+            records.append(OffsiteWorkRecord(
+                employee=emp,
+                approval_request_id=approval_request_id,
+                work_date=d,
+                work_type=work_type,
+                location=location,
+                reason=reason,
+            ))
+        created = OffsiteWorkRecord.objects.bulk_create(records)
+        ser = OffsiteWorkRecordSerializer(created, many=True)
+        return Response(ser.data, status=status.HTTP_201_CREATED)
+
+
+class OffsiteListView(APIView):
+    """GET: Danh sách ngoại viện. Admin/Manager thấy tất cả, NV thấy của mình."""
+
+    def get(self, request):
+        qs = OffsiteWorkRecord.objects.select_related('employee', 'employee__user')
+        is_admin = request.user.user_roles.filter(role__name__in=['admin', 'manager']).exists()
+        if not is_admin:
+            emp = getattr(request.user, 'employee_profile', None)
+            if not emp:
+                return Response([])
+            qs = qs.filter(employee=emp)
+
+        year = request.query_params.get('year')
+        month = request.query_params.get('month')
+        employee_id = request.query_params.get('employee_id')
+        req_status = request.query_params.get('status')
+
+        if year:
+            qs = qs.filter(work_date__year=int(year))
+        if month:
+            qs = qs.filter(work_date__month=int(month))
+        if employee_id:
+            qs = qs.filter(employee_id=int(employee_id))
+        if req_status:
+            qs = qs.filter(status=req_status)
+
+        ser = OffsiteWorkRecordSerializer(qs[:500], many=True)
+        return Response(ser.data)

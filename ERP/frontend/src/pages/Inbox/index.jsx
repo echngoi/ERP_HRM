@@ -250,11 +250,12 @@ export default function InboxPage() {
           const user = userMap[sender];
           const name = getUserDisplayText(user, sender);
           const avatarText = String(name).charAt(0).toUpperCase();
+          const avatarUrl = user?.avatar_url || null;
 
           return (
             <Space>
-              <Avatar size={28} style={{ backgroundColor: '#e6f4ff', color: '#1677ff' }}>
-                {avatarText}
+              <Avatar size={28} src={avatarUrl} style={{ backgroundColor: avatarUrl ? undefined : '#e6f4ff', color: avatarUrl ? undefined : '#1677ff' }}>
+                {!avatarUrl && avatarText}
               </Avatar>
               <Text>{name}</Text>
             </Space>

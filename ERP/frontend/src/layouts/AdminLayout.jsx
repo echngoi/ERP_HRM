@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   ApartmentOutlined,
   HomeOutlined,
+  IdcardOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -49,6 +50,11 @@ const menuItems = [
     icon: <HomeOutlined />,
     label: 'Tiêu đề nhanh',
   },
+  {
+    key: 'employee-config',
+    icon: <IdcardOutlined />,
+    label: 'Cấu hình nhân viên',
+  },
 ];
 
 const menuPathMap = {
@@ -58,6 +64,7 @@ const menuPathMap = {
   workflow: '/admin/workflow',
   template: '/admin/template',
   'quick-titles': '/admin/quick-titles',
+  'employee-config': '/admin/employee-config',
 };
 
 function getActiveMenuKey(pathname) {
@@ -66,6 +73,7 @@ function getActiveMenuKey(pathname) {
   if (pathname.startsWith('/admin/workflow')) return 'workflow';
   if (pathname.startsWith('/admin/template')) return 'template';
   if (pathname.startsWith('/admin/quick-titles')) return 'quick-titles';
+  if (pathname.startsWith('/admin/employee-config')) return 'employee-config';
   return 'users';
 }
 
@@ -82,6 +90,7 @@ export default function AdminLayout() {
   const displayName = user?.full_name || user?.username || user?.email || 'Quản trị viên';
   const primaryRole = Array.isArray(user?.roles) && user.roles.length > 0 ? user.roles[0] : 'admin';
   const avatarText = String(displayName).charAt(0).toUpperCase();
+  const avatarUrl = user?.avatar_url || null;
 
   const userMenuItems = [
     {
@@ -176,7 +185,7 @@ export default function AdminLayout() {
           <div className="admin-header__actions">
             <Dropdown menu={{ items: userMenuItems, onClick: handleLogout }} trigger={['click']}>
               <div className="admin-user-trigger">
-                <Avatar style={{ background: '#1d4ed8' }}>{avatarText}</Avatar>
+                <Avatar src={avatarUrl} style={{ background: avatarUrl ? undefined : '#1d4ed8' }}>{!avatarUrl && avatarText}</Avatar>
                 <div className="admin-user-trigger__meta">
                   <span className="admin-user-trigger__name">{displayName}</span>
                   <span className="admin-user-trigger__role">{formatRoleDisplayName(primaryRole)}</span>

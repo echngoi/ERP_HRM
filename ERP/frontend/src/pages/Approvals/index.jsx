@@ -21,16 +21,18 @@ import {
   Table,
   Tabs,
   Tag,
+  TimePicker,
   Tooltip,
   Typography,
   Upload,
   message,
 } from 'antd';
-import { AppstoreOutlined, CalendarOutlined, CheckOutlined, CloseOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FileTextOutlined, ShoppingCartOutlined, UploadOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, CalendarOutlined, CheckOutlined, CloseOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FileTextOutlined, IdcardOutlined, ShoppingCartOutlined, UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api from '../../services/api';
 import { getCurrentUserId } from '../../services/auth';
 import ApprovalActionModal from './ApprovalActionModal';
+import EmployeeUpdateRequests from '../Employees/EmployeeUpdateRequests';
 
 const { Title, Text } = Typography;
 
@@ -681,6 +683,7 @@ function ApprovalCreateModal({ open, submitting, onSubmit, onCancel }) {
   const [uploadFiles, setUploadFiles] = useState([]);
   const [templateDescriptionExpanded, setTemplateDescriptionExpanded] = useState(false);
   const [schemaExpanded, setSchemaExpanded] = useState(false);
+  const [leaveBalance, setLeaveBalance] = useState(null);
 
   useEffect(() => {
     if (!open) return;
@@ -771,6 +774,7 @@ function ApprovalCreateModal({ open, submitting, onSubmit, onCancel }) {
       form.setFieldValue('workflow', undefined);
       setTemplateDescriptionExpanded(false);
       setSchemaExpanded(false);
+      setLeaveBalance(null);
       return;
     }
     form.setFieldValue('workflow', selectedTemplate.workflow?.id);
@@ -785,12 +789,23 @@ function ApprovalCreateModal({ open, submitting, onSubmit, onCancel }) {
         : '';
       form.setFieldValue('title', suggestedTitle);
     }
+
+    // Fetch leave balance when template is linked to leave request
+    if (selectedTemplate.is_leave_request) {
+      api.get('/attendance/leave/my/').then((res) => {
+        setLeaveBalance(res.data);
+      }).catch(() => {
+        setLeaveBalance(null);
+      });
+    } else {
+      setLeaveBalance(null);
+    }
   }, [form, selectedTemplate]);
 
   const categoryOptions = useMemo(
     () => templates.map((group) => ({
       value: group.type,
-      label: CATEGORY_LABELS[group.type] || group.type,
+      label: group.type,
     })),
     [templates],
   );
@@ -982,6 +997,167 @@ function ApprovalCreateModal({ open, submitting, onSubmit, onCancel }) {
             </Col>
           )}
 
+          {selectedTemplate?.is_leave_request && (
+            <Col xs={24}>
+              <Card className="erp-form-modal__section erp-form-modal__section--soft" bordered={false}>
+                <div className="erp-form-modal__section-header">
+                  <Title level={5}>Thông tin nghỉ phép</Title>
+                </div>
+
+                {leaveBalance && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                    message={
+                      <span>
+                        Số ngày phép còn lại: <strong>{leaveBalance.remaining_days ?? 0}</strong> ngày
+                        {' '}(Được hưởng: {leaveBalance.entitled_days ?? 0}, Đã dùng: {leaveBalance.used_days ?? 0}, Chuyển kỳ: {leaveBalance.carried_over_days ?? 0})
+                      </span>
+                    }
+                  />
+                )}
+
+                <Row gutter={[16, 0]}>
+                  <Col xs={24} md={12}>
+                    <Form.Item
+                      label="Ngày nghỉ"
+                      name="leave_dates"
+                      rules={[{ required: true, message: 'Vui lòng chọn ngày nghỉ' }]}
+                    >
+                      <DatePicker.RangePicker
+                        style={{ width: '100%' }}
+                        format="DD/MM/YYYY"
+                        placeholder={['Từ ngày', 'Đến ngày']}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Form.Item
+                      label="Loại nghỉ"
+                      name="leave_type"
+                      initialValue="FULL_DAY"
+                      rules={[{ required: true, message: 'Chọn loại nghỉ' }]}
+                    >
+                      <Select
+                        options={[
+                          { label: 'Nghỉ cả ngày', value: 'FULL_DAY' },
+                          { label: 'Nghỉ buổi sáng', value: 'MORNING' },
+                          { label: 'Nghỉ buổi chiều', value: 'AFTERNOON' },
+                        ]}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Form.Item
+                      label="Nghỉ lương"
+                      name="paid_type"
+                      initialValue="PAID"
+                      rules={[{ required: true, message: 'Chọn loại' }]}
+                    >
+                      <Select
+                        options={[
+                          { label: 'Có lương', value: 'PAID' },
+                          { label: 'Không lương', value: 'UNPAID' },
+                        ]}
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              </Card>
+            </Col>
+          )}
+
+          {selectedTemplate?.is_overtime_request && (
+            <Col xs={24}>
+              <Card className="erp-form-modal__section erp-form-modal__section--soft" bordered={false}>
+                <div className="erp-form-modal__section-header">
+                  <Title level={5}>Thông tin làm thêm</Title>
+                </div>
+                <Row gutter={[16, 0]}>
+                  <Col xs={24} md={8}>
+                    <Form.Item
+                      label="Ngày làm thêm"
+                      name="ot_date"
+                      rules={[{ required: true, message: 'Vui lòng chọn ngày làm thêm' }]}
+                    >
+                      <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" placeholder="Chọn ngày" />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={12} md={8}>
+                    <Form.Item
+                      label="Giờ bắt đầu"
+                      name="ot_start_time"
+                      rules={[{ required: true, message: 'Chọn giờ bắt đầu' }]}
+                    >
+                      <TimePicker style={{ width: '100%' }} format="HH:mm" placeholder="Giờ bắt đầu" />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={12} md={8}>
+                    <Form.Item
+                      label="Giờ kết thúc"
+                      name="ot_end_time"
+                      rules={[{ required: true, message: 'Chọn giờ kết thúc' }]}
+                    >
+                      <TimePicker style={{ width: '100%' }} format="HH:mm" placeholder="Giờ kết thúc" />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24}>
+                    <Form.Item label="Lý do làm thêm" name="ot_reason">
+                      <Input.TextArea rows={2} placeholder="Nhập lý do làm thêm" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              </Card>
+            </Col>
+          )}
+
+          {selectedTemplate?.is_offsite_request && (
+            <Col xs={24}>
+              <Card className="erp-form-modal__section erp-form-modal__section--soft" bordered={false}>
+                <div className="erp-form-modal__section-header">
+                  <Title level={5}>Thông tin làm việc ngoại viện</Title>
+                </div>
+                <Row gutter={[16, 0]}>
+                  <Col xs={24} md={12}>
+                    <Form.Item
+                      label="Ngày làm việc ngoại viện"
+                      name="offsite_dates"
+                      rules={[{ required: true, message: 'Vui lòng chọn ngày' }]}
+                    >
+                      <DatePicker.RangePicker
+                        style={{ width: '100%' }}
+                        format="DD/MM/YYYY"
+                        placeholder={['Từ ngày', 'Đến ngày']}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Form.Item
+                      label="Loại"
+                      name="offsite_work_type"
+                      initialValue="FULL_DAY"
+                      rules={[{ required: true, message: 'Chọn loại' }]}
+                    >
+                      <Select
+                        options={[
+                          { label: 'Cả ngày', value: 'FULL_DAY' },
+                          { label: 'Buổi sáng', value: 'MORNING' },
+                          { label: 'Buổi chiều', value: 'AFTERNOON' },
+                        ]}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Form.Item label="Địa điểm" name="offsite_location">
+                      <Input placeholder="Nhập địa điểm" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              </Card>
+            </Col>
+          )}
+
           <Col xs={24}>
             <Card className="erp-form-modal__section erp-form-modal__section--soft erp-form-modal__section--upload" bordered={false}>
               <div className="erp-form-modal__section-header">
@@ -1041,6 +1217,7 @@ export default function ApprovalPage() {
     mimeType: '',
   });
   const [detailDrawer, setDetailDrawer] = useState({ open: false, record: null });
+  const [mainTab, setMainTab] = useState('approvals');
 
   const detailFormEntries = useMemo(() => {
     const formData = detailDrawer.record?.form_data;
@@ -1393,11 +1570,12 @@ export default function ApprovalPage() {
         return acc;
       }, {});
 
+      const VALID_CATEGORIES = ['LEAVE', 'PURCHASE', 'DOCUMENT', 'TASK'];
       const requestPayload = {
         type: 'APPROVAL',
         title: values.title,
         description: values.description,
-        category: values.category,
+        category: VALID_CATEGORIES.includes(values.category) ? values.category : null,
         form_data: normalizedFormData,
         priority: values.priority,
         workflow: Number(values.workflow),
@@ -1406,6 +1584,59 @@ export default function ApprovalPage() {
 
       const createdResponse = await api.post('/requests/', requestPayload);
       const createdRequestId = createdResponse?.data?.id;
+
+      // Create leave request records if this is a leave-linked approval
+      if (createdRequestId && values.leave_dates && Array.isArray(values.leave_dates) && values.leave_dates.length === 2) {
+        const startDate = dayjs(values.leave_dates[0]);
+        const endDate = dayjs(values.leave_dates[1]);
+        const leaveDateList = [];
+        let current = startDate;
+        while (current.isBefore(endDate) || current.isSame(endDate, 'day')) {
+          leaveDateList.push(current.format('YYYY-MM-DD'));  // weekends included
+          current = current.add(1, 'day');
+        }
+        if (leaveDateList.length > 0) {
+          await api.post('/attendance/leave/request/', {
+            leave_dates: leaveDateList,
+            leave_type: values.leave_type || 'FULL_DAY',
+            paid_type: values.paid_type || 'PAID',
+            reason: values.description || '',
+            approval_request_id: createdRequestId,
+          });
+        }
+      }
+
+      // Create overtime record if this is an overtime-linked approval
+      if (createdRequestId && values.ot_date && values.ot_start_time && values.ot_end_time) {
+        await api.post('/attendance/overtime/request/', {
+          ot_date: dayjs(values.ot_date).format('YYYY-MM-DD'),
+          start_time: dayjs(values.ot_start_time).format('HH:mm'),
+          end_time: dayjs(values.ot_end_time).format('HH:mm'),
+          reason: values.ot_reason || '',
+          approval_request_id: createdRequestId,
+        });
+      }
+
+      // Create offsite work records if this is an offsite-linked approval
+      if (createdRequestId && values.offsite_dates && Array.isArray(values.offsite_dates) && values.offsite_dates.length === 2) {
+        const startDate = dayjs(values.offsite_dates[0]);
+        const endDate = dayjs(values.offsite_dates[1]);
+        const offsiteDateList = [];
+        let cur = startDate;
+        while (cur.isBefore(endDate) || cur.isSame(endDate, 'day')) {
+          offsiteDateList.push(cur.format('YYYY-MM-DD'));  // weekends allowed for offsite
+          cur = cur.add(1, 'day');
+        }
+        if (offsiteDateList.length > 0) {
+          await api.post('/attendance/offsite/request/', {
+            work_dates: offsiteDateList,
+            work_type: values.offsite_work_type || 'FULL_DAY',
+            location: values.offsite_location || '',
+            reason: values.description || '',
+            approval_request_id: createdRequestId,
+          });
+        }
+      }
 
       if (createdRequestId && Array.isArray(uploadFileList) && uploadFileList.length > 0) {
         const formData = new FormData();
@@ -1873,6 +2104,28 @@ export default function ApprovalPage() {
 
   return (
     <div className="fixed-list-page approval-page" data-tab={selectedCategory}>
+      <Tabs
+        activeKey={mainTab}
+        onChange={setMainTab}
+        style={{ marginBottom: 0 }}
+        items={[
+          {
+            key: 'approvals',
+            label: <span><AppstoreOutlined /> Phê duyệt yêu cầu</span>,
+          },
+          {
+            key: 'employee-updates',
+            label: <span><IdcardOutlined /> Cập nhật thông tin NV</span>,
+          },
+        ]}
+      />
+
+      {mainTab === 'employee-updates' ? (
+        <div style={{ marginTop: 16 }}>
+          <EmployeeUpdateRequests />
+        </div>
+      ) : (
+      <>
       <Space direction="vertical" size="small" style={{ width: '100%' }} className="fixed-list-page-header approval-list-header">
         <Space style={{ width: '100%', justifyContent: 'space-between' }} align="start" className="list-page-titlebar">
           <div>
@@ -2274,6 +2527,8 @@ export default function ApprovalPage() {
         onSubmit={handleCreateApproval}
         onCancel={() => setCreateModalOpen(false)}
       />
+      </>
+      )}
     </div>
   );
 }
