@@ -5,6 +5,7 @@ import {
   ControlOutlined,
   DashboardOutlined,
   FileTextOutlined,
+  LockOutlined,
   LogoutOutlined,
   MailOutlined,
   MenuFoldOutlined,
@@ -18,6 +19,7 @@ import AdminRoute from './components/AdminRoute';
 import AnnouncementMarquee from './components/AnnouncementMarquee';
 import AppFooter from './components/AppFooter';
 import BottomTabBar from './components/BottomTabBar';
+import ChangePasswordModal from './components/ChangePasswordModal';
 import ForceProfileUpdate from './components/ForceProfileUpdate';
 import NotificationDropdown from './components/NotificationDropdown';
 import OfflineIndicator from './components/OfflineIndicator';
@@ -173,11 +175,18 @@ function App() {
   const avatarText = String(displayName).charAt(0).toUpperCase();
   const avatarUrl = user?.avatar_url || null;
 
+  const [changePwdOpen, setChangePwdOpen] = useState(false);
+
   const userMenuItems = [
     {
       key: 'my-profile',
       icon: <UserOutlined />,
       label: 'Thông tin nhân viên',
+    },
+    {
+      key: 'change-password',
+      icon: <LockOutlined />,
+      label: 'Đổi mật khẩu',
     },
     { type: 'divider' },
     {
@@ -190,6 +199,10 @@ function App() {
   const handleUserMenuClick = ({ key }) => {
     if (key === 'my-profile') {
       setProfileModalOpen(true);
+      return;
+    }
+    if (key === 'change-password') {
+      setChangePwdOpen(true);
       return;
     }
     if (key !== 'logout') return;
@@ -417,6 +430,7 @@ function App() {
       <Suspense fallback={null}>
         <MyProfileModal open={profileModalOpen} onClose={() => setProfileModalOpen(false)} />
       </Suspense>
+      <ChangePasswordModal open={changePwdOpen} onClose={() => setChangePwdOpen(false)} mode="self" />
 
       <BottomTabBar onMoreClick={handleSidebarToggle} />
     </Layout>

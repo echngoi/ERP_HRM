@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Grid, Input, message, Popconfirm, Select, Space, Table, Tag } from 'antd';
-import { SearchOutlined } from '@ant-design/icons';
+import { SearchOutlined, KeyOutlined } from '@ant-design/icons';
 import api from '../../services/api';
 import AdminSectionPage from './AdminSectionPage';
 import { formatRoleDisplayName, normalizeList } from './utils';
 import UserFormModal from './UserFormModal';
+import ChangePasswordModal from '../../components/ChangePasswordModal';
 
 export default function UsersPage() {
   const screens = Grid.useBreakpoint();
@@ -25,6 +26,7 @@ export default function UsersPage() {
   });
   const [lockingId, setLockingId] = useState(null);
   const [unlockingId, setUnlockingId] = useState(null);
+  const [resetPwdState, setResetPwdState] = useState({ open: false, user: null });
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -204,12 +206,15 @@ export default function UsersPage() {
       {
         title: 'Thao tác',
         key: 'actions',
-        width: 220,
+        width: 300,
         fixed: 'right',
         render: (_, record) => (
           <Space>
             <Button size="small" onClick={() => openEditModal(record)}>
               Sửa
+            </Button>
+            <Button size="small" icon={<KeyOutlined />} onClick={() => setResetPwdState({ open: true, user: record })}>
+              Mật khẩu
             </Button>
             {record.is_active ? (
               <Popconfirm
@@ -304,6 +309,13 @@ export default function UsersPage() {
         submitting={submitting}
         onCancel={closeModal}
         onSubmit={handleSubmit}
+      />
+      <ChangePasswordModal
+        open={resetPwdState.open}
+        onClose={() => setResetPwdState({ open: false, user: null })}
+        mode="admin"
+        targetUserId={resetPwdState.user?.id}
+        targetUserName={resetPwdState.user?.full_name || resetPwdState.user?.username}
       />
     </AdminSectionPage>
   );

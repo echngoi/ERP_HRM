@@ -1,5 +1,6 @@
+from django.contrib.auth.hashers import check_password
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import status, viewsets
+from rest_framework import serializers as drf_serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -66,3 +67,77 @@ class UserViewSet(viewsets.ModelViewSet):
         """GET /users/:id/permissions/ — list all permission codes for this user."""
         user = self.get_object()
         return Response({"permissions": get_user_permissions(user)})
+
+    # ── Change own password (any authenticated user) ──
+    @action(detail=False, methods=["post"], url_path="change-password", permission_classes=[IsAuthenticated])
+    def change_password(self, request):
+        """POST /users/change-password/ — user changes own password."""
+        old_password = request.data.get("old_password", "")
+        new_password = request.data.get("new_password", "")
+        confirm_password = request.data.get("confirm_password", "")
+
+        if not old_password or not new_password:
+            return Response(
+                {"detail": "Vui lòng nhập đầy đủ mật khẩu cũ và mật khẩu mới."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not check_password(old_password, request.user.password):
+            return Response(
+                {"detail": "Mật khẩu hiện tại không đúng."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if len(new_password) < 8:
+            return Response(
+                {"detail": "Mật khẩu mới phải có ít nhất 8 ký tự."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if new_password != confirm_password:
+            return Response(
+                {"detail": "Mật khẩu mới và xác nhận mật khẩu không khớp."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if check_password(new_password, request.user.password):
+            return Response(
+                {"detail": "Mật khẩu mới không được trùng với mật khẩu hiện tại."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        request.user.set_password(new_password)
+        request.user.save(update_fields=["password"])
+        return Response({"detail": "Đổi mật khẩu thành công."})
+
+    # ── Admin reset password for any user ──
+    @action(detail=True, methods=["post"], url_path="reset-password", permission_classes=[IsAdmin])
+    def reset_password(self, request, pk=None):
+        """POST /users/:id/reset-password/ — admin resets a user's password."""
+        target_user = self.get_object()
+        new_password = request.data.get("new_password", "")
+        confirm_password = request.data.get("confirm_password", "")
+
+        if not new_password:
+            return Response(
+                {"detail": "Vui lòng nhập mật khẩu mới."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if len(new_password) < 8:
+            return Response(
+                {"detail": "Mật khẩu mới phải có ít nhất 8 ký tự."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if new_password != confirm_password:
+            return Response(
+                {"detail": "Mật khẩu mới và xác nhận mật khẩu không khớp."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        target_user.set_password(new_password)
+        target_user.save(update_fields=["password"])
+        return Response(
+            {"detail": f"Đã đặt lại mật khẩu cho {target_user.full_name or target_user.username}."}
+        )

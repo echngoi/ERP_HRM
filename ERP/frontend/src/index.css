@@ -1219,6 +1219,49 @@ body {
   border-color: #cdd9ea !important;
 }
 
+/* ===== Change Password Modal ===== */
+.change-password-modal {
+  padding: 4px 0;
+}
+.change-password-modal__header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.change-password-modal__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #e0e7ff 0%, #dbeafe 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #2563eb;
+  flex-shrink: 0;
+}
+.change-password-modal__strength {
+  margin-top: -8px;
+  margin-bottom: 16px;
+}
+.change-password-modal__strength .ant-progress {
+  margin-bottom: 2px;
+}
+.change-password-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 8px;
+}
+@media (max-width: 767px) {
+  .change-password-modal__actions {
+    flex-direction: column-reverse;
+  }
+  .change-password-modal__actions .ant-btn {
+    width: 100%;
+  }
+}
+
 .compose-action-card {
   border-radius: 14px !important;
   border: 1px solid #dbe6f4 !important;
