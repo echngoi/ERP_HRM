@@ -24,6 +24,7 @@ import {
   Upload,
 } from 'antd';
 import {
+  DeleteOutlined,
   EditOutlined,
   EyeOutlined,
   IdcardOutlined,
@@ -78,6 +79,8 @@ export default function EmployeesPage() {
   const [form] = Form.useForm();
   const watchedContractStatus = Form.useWatch('contract_status', form);
   const [saving, setSaving] = useState(false);
+  const [editAvatarUrl, setEditAvatarUrl] = useState(null);
+  const [removeAvatar, setRemoveAvatar] = useState(false);
 
   const fetchEmployees = useCallback(async (page = 1, pageSize = 10) => {
     setLoading(true);
@@ -124,8 +127,11 @@ export default function EmployeesPage() {
     setDrawerMode(mode);
     setDrawerOpen(true);
     if (mode === 'edit') {
+      setEditAvatarUrl(employee.avatar_url || null);
+      setRemoveAvatar(false);
       form.setFieldsValue({
         ...employee,
+        avatar: undefined,
         date_of_birth: employee.date_of_birth ? dayjs(employee.date_of_birth) : null,
         date_joined_company: employee.date_joined_company ? dayjs(employee.date_joined_company) : null,
         contract_start: employee.contract_start ? dayjs(employee.contract_start) : null,
@@ -145,18 +151,22 @@ export default function EmployeesPage() {
       if (payload.contract_start) payload.contract_start = payload.contract_start.format('YYYY-MM-DD');
       if (payload.contract_end) payload.contract_end = payload.contract_end.format('YYYY-MM-DD');
 
-      // Handle avatar upload
-      if (payload.avatar && payload.avatar.fileList) {
+      // Handle avatar upload or removal
+      const hasNewAvatar = payload.avatar?.fileList?.[0]?.originFileObj;
+      if (hasNewAvatar || removeAvatar) {
         const formData = new FormData();
         Object.entries(payload).forEach(([k, v]) => {
           if (k === 'avatar') {
-            if (v.fileList?.[0]?.originFileObj) {
+            if (hasNewAvatar) {
               formData.append('avatar', v.fileList[0].originFileObj);
             }
           } else if (v !== null && v !== undefined) {
             formData.append(k, v);
           }
         });
+        if (removeAvatar && !hasNewAvatar) {
+          formData.append('avatar', '');
+        }
         await updateEmployee(selectedEmployee.id, formData);
       } else {
         delete payload.avatar;
@@ -330,14 +340,36 @@ export default function EmployeesPage() {
 
   const renderEditForm = () => (
     <Form form={form} layout="vertical">
-      <Form.Item name="avatar" label="Ảnh đại diện">
-        <Upload
-          listType="picture"
-          maxCount={1}
-          beforeUpload={() => false}
-        >
-          <Button icon={<UploadOutlined />}>Chọn ảnh</Button>
-        </Upload>
+      <Form.Item label="Ảnh đại diện">
+        {editAvatarUrl && !removeAvatar && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <Avatar src={editAvatarUrl} size={64} icon={<UserOutlined />} style={{ border: '2px solid #f0f0f0' }} />
+            <div>
+              <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>Ảnh hiện tại</Text>
+              <Button
+                danger
+                size="small"
+                icon={<DeleteOutlined />}
+                onClick={() => { setRemoveAvatar(true); setEditAvatarUrl(null); }}
+                style={{ marginTop: 4 }}
+              >
+                Xóa ảnh
+              </Button>
+            </div>
+          </div>
+        )}
+        <Form.Item name="avatar" noStyle>
+          <Upload
+            listType="picture"
+            maxCount={1}
+            beforeUpload={() => false}
+            onChange={({ fileList }) => {
+              if (fileList.length > 0) setRemoveAvatar(false);
+            }}
+          >
+            <Button icon={<UploadOutlined />}>Chọn ảnh mới</Button>
+          </Upload>
+        </Form.Item>
       </Form.Item>
       <Form.Item name="phone" label="Số điện thoại">
         <Input placeholder="Nhập số điện thoại" />

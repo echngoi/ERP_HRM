@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Card, Table, DatePicker, Select, Button, Row, Col, Statistic, Tag, Space,
+  Card, Table, DatePicker, Select, Button, Row, Col, Grid, Statistic, Tag, Space,
   Typography, message, Tooltip, Tabs, Spin,
 } from 'antd';
 import {
@@ -23,6 +23,8 @@ const STATUS_MAP = {
 };
 
 export default function AttendanceReport() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [reportData, setReportData] = useState(null);
@@ -283,9 +285,10 @@ export default function AttendanceReport() {
       {/* Filters */}
       <Card size="small" style={{ marginBottom: 16 }}>
         <Row gutter={[16, 12]} align="middle">
-          <Col>
+          <Col xs={24} md={10}>
             <Text type="secondary" style={{ marginRight: 8 }}>Khoảng thời gian:</Text>
             <RangePicker
+              style={{ width: isMobile ? '100%' : undefined }}
               value={dateRange}
               onChange={val => val && setDateRange(val)}
               format="DD/MM/YYYY"
@@ -301,12 +304,12 @@ export default function AttendanceReport() {
               ]}
             />
           </Col>
-          <Col>
+          <Col xs={24} md={8}>
             <Text type="secondary" style={{ marginRight: 8 }}>Nhân viên:</Text>
             <Select
               allowClear
               placeholder="Tất cả nhân viên"
-              style={{ width: 220 }}
+              style={{ width: isMobile ? '100%' : 220 }}
               value={selectedUser}
               onChange={setSelectedUser}
               showSearch
@@ -314,8 +317,8 @@ export default function AttendanceReport() {
               options={employees.map(e => ({ value: e.user_id, label: `${e.user_id} - ${e.display_name}` }))}
             />
           </Col>
-          <Col>
-            <Space>
+          <Col xs={24} md={6}>
+            <Space wrap>
               <Button type="primary" icon={<SearchOutlined />} onClick={fetchReport} loading={loading}>
                 Xem báo cáo
               </Button>

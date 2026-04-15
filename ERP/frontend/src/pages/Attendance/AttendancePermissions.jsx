@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Card, Table, Button, Modal, Form, Select, Switch, Space, Tag, Typography, message, Popconfirm, Tabs,
+  Card, Table, Button, Modal, Form, Select, Switch, Space, Tag, Typography, Grid, message, Popconfirm, Tabs,
   Descriptions, Empty,
 } from 'antd';
 import {
@@ -31,6 +31,8 @@ const ALL_PAGE_VALUES = PAGE_OPTIONS.map((o) => o.value);
 
 /* ── Attendance Permissions Tab ─────────────────────────── */
 function PermissionsTab() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [permissions, setPermissions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -150,6 +152,7 @@ function PermissionsTab() {
         loading={loading}
         pagination={false}
         size="small"
+        scroll={{ x: 500 }}
         locale={{ emptyText: <Empty description="Chưa có phân quyền nào" /> }}
       />
 
@@ -161,6 +164,9 @@ function PermissionsTab() {
         okText="Áp dụng"
         cancelText="Hủy"
         confirmLoading={submitting}
+        width={isMobile ? '100%' : undefined}
+        className={isMobile ? 'erp-modal-mobile' : ''}
+        style={isMobile ? { top: 0, maxWidth: '100vw', margin: 0 } : undefined}
       >
         <Form form={form} layout="vertical" initialValues={{ pages: [] }}>
           <Form.Item label="Phân quyền cho">
@@ -299,6 +305,7 @@ function MappingTab() {
       loading={loading}
       pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], showTotal: t => `Tổng: ${t} tài khoản` }}
       size="small"
+      scroll={{ x: 600 }}
     />
   );
 }

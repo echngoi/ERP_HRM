@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Card, Table, Button, Space, Tag, Typography, message, Modal, Form,
+  Card, Table, Button, Space, Tag, Typography, Grid, message, Modal, Form,
   Input, Select, TimePicker, Popconfirm, Drawer, InputNumber, Divider, Tabs, Tooltip,
 } from 'antd';
 import {
@@ -25,6 +25,8 @@ const SHIFT_TYPE_COLORS = { hc: 'blue', '3punch': 'orange', '4punch': 'purple' }
 const TIME_FORMAT = 'HH:mm';
 
 export default function ShiftManagement() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [shifts, setShifts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState(false);
@@ -334,6 +336,7 @@ export default function ShiftManagement() {
           loading={loading}
           pagination={false}
           size="middle"
+          scroll={{ x: 700 }}
         />
       </Card>
 
@@ -346,6 +349,9 @@ export default function ShiftManagement() {
         okText={editing ? 'Cập nhật' : 'Tạo'}
         cancelText="Hủy"
         forceRender
+        width={isMobile ? '100%' : undefined}
+        className={isMobile ? 'erp-modal-mobile' : ''}
+        style={isMobile ? { top: 0, maxWidth: '100vw', margin: 0 } : undefined}
       >
         <Form form={form} layout="vertical">
           <Form.Item name="name" label="Tên ca" rules={[{ required: true, message: 'Nhập tên ca' }]}> 
@@ -412,7 +418,7 @@ export default function ShiftManagement() {
         title={settingsShift ? `Cài đặt: ${settingsShift.name}` : 'Cài đặt'}
         open={!!settingsShift}
         onClose={() => setSettingsShift(null)}
-        width={640}
+        width={isMobile ? '100%' : 640}
         extra={
           <Button type="primary" onClick={handleSaveSettings} loading={settingsLoading}>
             Lưu cấu hình

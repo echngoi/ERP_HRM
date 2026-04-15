@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, message, Popconfirm, Space, Table, Tag } from 'antd';
+import { Alert, Button, Grid, message, Popconfirm, Space, Table, Tag } from 'antd';
 import api from '../../services/api';
 import AssignPermissionsModal from './AssignPermissionsModal';
 import AdminSectionPage from './AdminSectionPage';
@@ -21,6 +21,8 @@ const DEFAULT_ROLES = [
 const PROTECTED_ROLE_NAMES = new Set(DEFAULT_ROLES.map((role) => role.name));
 
 export default function RolesPage() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [items, setItems] = useState([]);
   const [permissions, setPermissions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -255,7 +257,7 @@ export default function RolesPage() {
           >
             Tạo vai trò
           </Button>
-          <Button onClick={loadData}>Tải lại</Button>
+          {!isMobile && <Button onClick={loadData}>Tải lại</Button>}
         </Space>
       )}
     >

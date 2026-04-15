@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Form, Input, Modal, Select } from 'antd';
+import { Form, Grid, Input, Modal, Select } from 'antd';
 import api from '../../services/api';
 
 export default function UserFormModal({
@@ -12,6 +12,8 @@ export default function UserFormModal({
   onCancel,
   onSubmit,
 }) {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [form] = Form.useForm();
   const isEditMode = mode === 'edit';
 
@@ -81,6 +83,9 @@ export default function UserFormModal({
       onCancel={onCancel}
       onOk={handleOk}
       destroyOnHidden
+      width={isMobile ? '100%' : undefined}
+      className={isMobile ? 'erp-modal-mobile' : ''}
+      style={isMobile ? { top: 0, maxWidth: '100vw', margin: 0 } : undefined}
     >
       <Form form={form} layout="vertical">
         <Form.Item

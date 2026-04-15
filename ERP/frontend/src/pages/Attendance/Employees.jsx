@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Table, Card, Button, Space, Tag, Typography,
+  Table, Card, Button, Space, Tag, Typography, Grid,
   message, Avatar, Input, Switch, Select
 } from 'antd';
 import {
@@ -15,6 +15,8 @@ const PRIVILEGE_COLORS = { 0: 'blue', 14: 'red', 1: 'green' };
 const PRIVILEGE_LABELS = { 0: 'Nhân viên', 14: 'Quản trị viên', 1: 'Người dùng' };
 
 export default function EmployeesPage() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [data, setData]       = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -227,28 +229,29 @@ export default function EmployeesPage() {
       title={<Text strong>Danh sách nhân viên ({filtered.length})</Text>}
       bordered={false}
       extra={
-        <Space>
+        <Space wrap size={8}>
           <Input
             placeholder="Tìm kiếm..."
             prefix={<SearchOutlined />}
             value={search}
             onChange={e => setSearch(e.target.value)}
-            style={{ width: 220 }}
+            style={{ width: isMobile ? '100%' : 220 }}
             allowClear
           />
           <Button
             type="primary"
+            size={isMobile ? 'small' : 'middle'}
             icon={<SyncOutlined spin={syncing} />}
             onClick={handleSync}
             loading={syncing}
           >
-            Đồng bộ từ máy
+            Đồng bộ
           </Button>
         </Space>
       }
     >
       {selectedRowKeys.length > 0 && (
-        <Space style={{ marginBottom: 12 }}>
+        <Space wrap style={{ marginBottom: 12 }}>
           <Text type="secondary">
             Đã chọn {selectedRowKeys.length} nhân viên
           </Text>

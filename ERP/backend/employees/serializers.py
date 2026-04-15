@@ -65,6 +65,8 @@ class EmployeeSerializer(serializers.ModelSerializer):
 class EmployeeUpdateSerializer(serializers.ModelSerializer):
     """For editor/admin full update of employee fields."""
 
+    avatar = serializers.ImageField(required=False, allow_null=True)
+
     class Meta:
         model = Employee
         fields = [
@@ -87,6 +89,12 @@ class EmployeeUpdateSerializer(serializers.ModelSerializer):
             "work_status",
             "avatar",
         ]
+
+    def validate_avatar(self, value):
+        # Allow clearing avatar by sending empty string
+        if value == '' or value is None:
+            return None
+        return value
 
 
 class EmployeeUpdateRequestSerializer(serializers.ModelSerializer):

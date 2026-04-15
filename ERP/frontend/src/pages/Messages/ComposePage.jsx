@@ -6,6 +6,7 @@ import {
   Col,
   Divider,
   Form,
+  Grid,
   Input,
   Row,
   Select,
@@ -76,6 +77,8 @@ function formatFileSize(sizeInBytes) {
 export default function ComposeMessagePage() {
   const navigate = useNavigate();
   const [form] = Form.useForm();
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
 
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -202,17 +205,31 @@ export default function ComposeMessagePage() {
 
   return (
     <div className="compose-message-page">
-      <Card className="compose-hero-card" bordered={false}>
-        <Space direction="vertical" size={2}>
-          <Title level={4} style={{ margin: 0 }}>Soạn báo cáo nội bộ</Title>
-          <Text type="secondary">Gửi báo cáo nội bộ nhanh chóng đến người dùng hoặc phòng ban</Text>
-        </Space>
-      </Card>
+      {!isMobile && (
+        <Card className="compose-hero-card" bordered={false}>
+          <Space direction="vertical" size={2}>
+            <Title level={4} style={{ margin: 0 }}>Soạn báo cáo nội bộ</Title>
+            <Text type="secondary">Gửi báo cáo nội bộ nhanh chóng đến người dùng hoặc phòng ban</Text>
+          </Space>
+        </Card>
+      )}
 
       {error && <Alert type="warning" message={error} showIcon style={{ marginTop: 12 }} />}
 
       <Form form={form} layout="vertical" onFinish={handleSubmit}>
-        <Row gutter={[16, 16]} style={{ marginTop: 12 }}>
+        {isMobile && (
+          <Card size="small" className="compose-card" bordered={false} style={{ marginBottom: 12 }}>
+            <Text strong style={{ fontSize: 15 }}>Người nhận</Text>
+            <div style={{ height: 8 }} />
+            <Form.Item label="Người dùng" name="user_ids" style={{ marginBottom: 8 }}>
+              <Select mode="multiple" allowClear showSearch optionFilterProp="label" options={userOptions} loading={loadingTargets} placeholder="Chọn người nhận" />
+            </Form.Item>
+            <Form.Item label="Phòng ban" name="department_ids" style={{ marginBottom: 0 }}>
+              <Select mode="multiple" allowClear showSearch optionFilterProp="label" options={departmentOptions} loading={loadingTargets} placeholder="Chọn phòng ban nhận" />
+            </Form.Item>
+          </Card>
+        )}
+        <Row gutter={[16, 16]} style={{ marginTop: isMobile ? 0 : 12 }}>
           <Col xs={24} lg={16}>
             <Card className="compose-card compose-main-card" bordered={false}>
               <Form.Item
@@ -235,7 +252,7 @@ export default function ComposeMessagePage() {
                   { min: 5, message: 'Nội dung tối thiểu 5 ký tự' },
                 ]}
               >
-                <Input.TextArea rows={10} placeholder="Nhập nội dung báo cáo" showCount maxLength={5000} />
+                <Input.TextArea rows={isMobile ? 6 : 10} placeholder="Nhập nội dung báo cáo" showCount maxLength={5000} />
               </Form.Item>
 
               <Divider style={{ margin: '12px 0 14px' }} />
@@ -282,6 +299,7 @@ export default function ComposeMessagePage() {
             </Card>
           </Col>
 
+          {!isMobile && (
           <Col xs={24} lg={8}>
             <Space direction="vertical" size={16} style={{ width: '100%' }}>
               <Card className="compose-card compose-side-card" bordered={false}>
@@ -321,6 +339,7 @@ export default function ComposeMessagePage() {
               </Card>
             </Space>
           </Col>
+          )}
         </Row>
 
         <Card className="compose-action-card" bordered={false} style={{ marginTop: 14 }}>

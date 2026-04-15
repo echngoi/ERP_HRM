@@ -3,6 +3,7 @@ import {
   Alert,
   Button,
   Form,
+  Grid,
   Input,
   InputNumber,
   message,
@@ -22,6 +23,8 @@ import { normalizeList } from './utils';
 const { Text } = Typography;
 
 export default function QuickTitlesPage() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -216,6 +219,7 @@ export default function QuickTitlesPage() {
         dataSource={items}
         pagination={{ pageSize: 20, showSizeChanger: false }}
         size="middle"
+        scroll={{ x: 700 }}
       />
 
       <Modal
@@ -227,7 +231,9 @@ export default function QuickTitlesPage() {
         cancelText="Hủy"
         confirmLoading={submitting}
         destroyOnClose
-        width={500}
+        width={isMobile ? '100%' : 500}
+        className={isMobile ? 'erp-modal-mobile' : ''}
+        style={isMobile ? { top: 0, maxWidth: '100vw', margin: 0 } : undefined}
       >
         <Form form={form} layout="vertical">
           <Form.Item

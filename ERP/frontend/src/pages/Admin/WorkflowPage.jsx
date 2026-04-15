@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   Form,
+  Grid,
   Input,
   message,
   Modal,
@@ -62,6 +63,8 @@ function createStep(role = '') {
 }
 
 export default function WorkflowPage() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [items, setItems] = useState([]);
   const [roles, setRoles] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -579,8 +582,8 @@ export default function WorkflowPage() {
       extra={(
         <Space wrap>
           <Button type="primary" onClick={openCreateModal}>Tạo quy trình</Button>
-          <Select value={typeFilter} options={TYPE_OPTIONS} onChange={setTypeFilter} style={{ width: 160 }} />
-          <Button onClick={loadData}>Tải lại</Button>
+          <Select value={typeFilter} options={TYPE_OPTIONS} onChange={setTypeFilter} style={{ width: isMobile ? '100%' : 160 }} />
+          {!isMobile && <Button onClick={loadData}>Tải lại</Button>}
         </Space>
       )}
     >
@@ -595,7 +598,9 @@ export default function WorkflowPage() {
         confirmLoading={submitting}
         onCancel={closeCreateModal}
         onOk={submitCreateWorkflow}
-        width={760}
+        width={isMobile ? '100%' : 760}
+        className={isMobile ? 'erp-modal-mobile' : ''}
+        style={isMobile ? { top: 0, maxWidth: '100vw', margin: 0 } : undefined}
         destroyOnHidden
       >
         <Form form={createForm} layout="vertical">
@@ -632,14 +637,14 @@ export default function WorkflowPage() {
                   <Select
                     value={step.role_required}
                     options={roleOptions}
-                    style={{ width: 170 }}
+                    style={{ width: isMobile ? '100%' : 170 }}
                     onChange={(value) => changeBuilderStepRole(index, value)}
                     placeholder="Chọn vai trò"
                   />
                   <Select
                     value={index + 1}
                     options={steps.map((_, idx) => ({ label: `Thứ tự ${idx + 1}`, value: idx + 1 }))}
-                    style={{ width: 130 }}
+                    style={{ width: isMobile ? '100%' : 130 }}
                     onChange={(targetOrder) => reorderBuilderStep(index, targetOrder)}
                   />
                   <Button onClick={() => removeBuilderStep(index)} disabled={steps.length === 1}>
@@ -651,14 +656,14 @@ export default function WorkflowPage() {
                   <Select
                     value={step.approver_scope || 'ALL_WITH_ROLE'}
                     options={APPROVER_SCOPE_OPTIONS}
-                    style={{ width: 220 }}
+                    style={{ width: isMobile ? '100%' : 220 }}
                     onChange={(value) => changeBuilderStepScope(index, value)}
                   />
                   {step.approver_scope === 'SPECIFIC_DEPT' && (
                     <Select
                       value={step.approver_department}
                       options={departmentOptions}
-                      style={{ width: 180 }}
+                      style={{ width: isMobile ? '100%' : 180 }}
                       placeholder="Chọn phòng ban"
                       showSearch
                       optionFilterProp="label"
@@ -669,7 +674,7 @@ export default function WorkflowPage() {
                     <Select
                       value={step.approver_user}
                       options={userOptions}
-                      style={{ width: 200 }}
+                      style={{ width: isMobile ? '100%' : 200 }}
                       placeholder="Chọn người duyệt"
                       showSearch
                       optionFilterProp="label"
@@ -731,7 +736,9 @@ export default function WorkflowPage() {
         }}
         onCancel={closeEditStepsModal}
         onOk={submitEditSteps}
-        width={760}
+        width={isMobile ? '100%' : 760}
+        className={isMobile ? 'erp-modal-mobile' : ''}
+        style={isMobile ? { top: 0, maxWidth: '100vw', margin: 0 } : undefined}
         destroyOnHidden
       >
         {editStepsState.loadingInstances ? (
@@ -776,7 +783,7 @@ export default function WorkflowPage() {
                   <Select
                     value={step.role_required}
                     options={roleOptions}
-                    style={{ width: 170 }}
+                    style={{ width: isMobile ? '100%' : 170 }}
                     onChange={(value) => changeEditStepRole(index, value)}
                     placeholder="Chọn vai trò"
                     disabled={editStepsState.hasActiveInstances}
@@ -784,7 +791,7 @@ export default function WorkflowPage() {
                   <Select
                     value={index + 1}
                     options={editStepsState.steps.map((_, idx) => ({ label: `Thứ tự ${idx + 1}`, value: idx + 1 }))}
-                    style={{ width: 130 }}
+                    style={{ width: isMobile ? '100%' : 130 }}
                     onChange={(targetOrder) => reorderEditStep(index, targetOrder)}
                     disabled={editStepsState.hasActiveInstances}
                   />
@@ -800,7 +807,7 @@ export default function WorkflowPage() {
                   <Select
                     value={step.approver_scope || 'ALL_WITH_ROLE'}
                     options={APPROVER_SCOPE_OPTIONS}
-                    style={{ width: 220 }}
+                    style={{ width: isMobile ? '100%' : 220 }}
                     onChange={(value) => changeEditStepScope(index, value)}
                     disabled={editStepsState.hasActiveInstances}
                   />
@@ -808,7 +815,7 @@ export default function WorkflowPage() {
                     <Select
                       value={step.approver_department}
                       options={departmentOptions}
-                      style={{ width: 180 }}
+                      style={{ width: isMobile ? '100%' : 180 }}
                       placeholder="Chọn phòng ban"
                       showSearch
                       optionFilterProp="label"
@@ -820,7 +827,7 @@ export default function WorkflowPage() {
                     <Select
                       value={step.approver_user}
                       options={userOptions}
-                      style={{ width: 200 }}
+                      style={{ width: isMobile ? '100%' : 200 }}
                       placeholder="Chọn người duyệt"
                       showSearch
                       optionFilterProp="label"

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -5,8 +6,9 @@ import {
   EllipsisOutlined,
   FileTextOutlined,
 } from '@ant-design/icons';
-import { Grid } from 'antd';
+import { Badge, Grid } from 'antd';
 import { useLocation, useNavigate } from 'react-router-dom';
+import api from '../services/api';
 
 const TABS = [
   { key: 'dashboard', path: '/dashboard', icon: <DashboardOutlined />, label: 'Tổng quan' },
@@ -21,6 +23,22 @@ export default function BottomTabBar({ onMoreClick }) {
   const isDesktop = Boolean(screens.lg);
   const location = useLocation();
   const navigate = useNavigate();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    if (isDesktop) return;
+    const fetchCount = () => {
+      api.get('/requests/', { params: { type: 'APPROVAL', needs_my_approval: '1', page: 1 } })
+        .then(res => {
+          const count = res.data?.count ?? (Array.isArray(res.data) ? res.data.length : 0);
+          setPendingCount(count);
+        })
+        .catch(() => {});
+    };
+    fetchCount();
+    const interval = setInterval(fetchCount, 60000);
+    return () => clearInterval(interval);
+  }, [isDesktop]);
 
   if (isDesktop) return null;
 
@@ -49,7 +67,11 @@ export default function BottomTabBar({ onMoreClick }) {
             navigate(tab.path);
           }}
         >
-          {tab.icon}
+          {tab.key === 'approvals' ? (
+            <Badge count={pendingCount} size="small" offset={[2, -2]}>
+              {tab.icon}
+            </Badge>
+          ) : tab.icon}
           <span>{tab.label}</span>
         </button>
       ))}

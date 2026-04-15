@@ -359,9 +359,9 @@ export default function DashboardPage() {
         />
       )}
 
-      <Row gutter={[18, 18]} className="dashboard-stat-grid">
+      <Row gutter={[12, 12]} className="dashboard-stat-grid">
         {STATS.map((config) => (
-          <Col xs={24} sm={12} xl={6} key={config.key}>
+          <Col xs={12} sm={12} xl={6} key={config.key}>
             <StatCard
               tone={config.tone}
               title={config.title}

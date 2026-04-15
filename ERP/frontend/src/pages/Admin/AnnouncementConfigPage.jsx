@@ -10,6 +10,7 @@ import {
   ColorPicker,
   DatePicker,
   Form,
+  Grid,
   Input,
   InputNumber,
   message,
@@ -48,6 +49,8 @@ function colorToHex(c) {
 }
 
 export default function AnnouncementConfigPage() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -253,6 +256,7 @@ export default function AnnouncementConfigPage() {
           loading={loading}
           pagination={false}
           size="middle"
+          scroll={{ x: 800 }}
         />
       </Card>
 
@@ -264,7 +268,9 @@ export default function AnnouncementConfigPage() {
         confirmLoading={saving}
         okText="Lưu"
         cancelText="Huỷ"
-        width={580}
+        width={isMobile ? '100%' : 580}
+        className={isMobile ? 'erp-modal-mobile' : ''}
+        style={isMobile ? { top: 0, maxWidth: '100vw', margin: 0 } : undefined}
         destroyOnClose
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>

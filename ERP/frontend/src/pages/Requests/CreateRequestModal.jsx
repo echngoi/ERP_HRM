@@ -4,6 +4,7 @@ import {
   Col,
   DatePicker,
   Form,
+  Grid,
   Input,
   InputNumber,
   Modal,
@@ -48,6 +49,8 @@ export default function CreateRequestModal({
   onCancel,
 }) {
   const [form] = Form.useForm();
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const currentUserId = getCurrentUserId();
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -181,8 +184,9 @@ export default function CreateRequestModal({
       cancelText="Hủy"
       confirmLoading={submitting}
       destroyOnClose
-      width={860}
-      className="erp-form-modal"
+      width={isMobile ? '100%' : 860}
+      className={`erp-form-modal${isMobile ? ' erp-modal-mobile' : ''}`}
+      style={isMobile ? { top: 0, maxWidth: '100vw', margin: 0, paddingBottom: 0 } : undefined}
     >
       <Form
         form={form}

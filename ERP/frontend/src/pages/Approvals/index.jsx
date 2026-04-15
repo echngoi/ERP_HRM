@@ -27,7 +27,7 @@ import {
   Upload,
   message,
 } from 'antd';
-import { AppstoreOutlined, CalendarOutlined, CheckOutlined, CloseOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FileTextOutlined, IdcardOutlined, ShoppingCartOutlined, UploadOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, CalendarOutlined, CheckOutlined, CloseOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FileTextOutlined, FilterOutlined, IdcardOutlined, PlusOutlined, SearchOutlined, ShoppingCartOutlined, UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api from '../../services/api';
 import { getCurrentUserId } from '../../services/auth';
@@ -679,6 +679,8 @@ function triggerDownload(url, fileName = '') {
 
 function ApprovalCreateModal({ open, submitting, onSubmit, onCancel }) {
   const [form] = Form.useForm();
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [templates, setTemplates] = useState([]);
   const [loadingData, setLoadingData] = useState(false);
   const [uploadFiles, setUploadFiles] = useState([]);
@@ -838,8 +840,9 @@ function ApprovalCreateModal({ open, submitting, onSubmit, onCancel }) {
       cancelText="Hủy"
       confirmLoading={submitting}
       destroyOnClose
-      width={920}
-      className="erp-form-modal"
+      width={isMobile ? '100%' : 920}
+      className={`erp-form-modal${isMobile ? ' erp-modal-mobile' : ''}`}
+      style={isMobile ? { top: 0, maxWidth: '100vw', margin: 0, paddingBottom: 0 } : undefined}
     >
       <Form
         form={form}
@@ -1185,6 +1188,7 @@ function ApprovalCreateModal({ open, submitting, onSubmit, onCancel }) {
 
 export default function ApprovalPage() {
   const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const currentUserId = getCurrentUserId();
   const [editForm] = Form.useForm();
 
@@ -1219,6 +1223,7 @@ export default function ApprovalPage() {
   });
   const [detailDrawer, setDetailDrawer] = useState({ open: false, record: null });
   const [mainTab, setMainTab] = useState('approvals');
+  const [showFilters, setShowFilters] = useState(false);
 
   const detailFormEntries = useMemo(() => {
     const formData = detailDrawer.record?.form_data;
@@ -2130,17 +2135,19 @@ export default function ApprovalPage() {
       ) : (
       <>
       <Space direction="vertical" size="small" style={{ width: '100%' }} className="fixed-list-page-header approval-list-header">
+        {!isMobile && (
         <Space style={{ width: '100%', justifyContent: 'space-between' }} align="start" className="list-page-titlebar">
           <div>
             <Title level={4} style={{ margin: 0 }}>
               Trang Phê Duyệt
             </Title>
-            {screens.md && <Text type="secondary">Theo dõi và quản lý toàn bộ các yêu cầu phê duyệt trong hệ thống</Text>}
+            <Text type="secondary">Theo dõi và quản lý toàn bộ các yêu cầu phê duyệt trong hệ thống</Text>
           </div>
           <Button type="primary" onClick={() => setCreateModalOpen(true)}>
             Tạo yêu cầu phê duyệt
           </Button>
         </Space>
+        )}
 
         {error && <Alert type="error" message={error} showIcon />}
 
@@ -2162,6 +2169,42 @@ export default function ApprovalPage() {
         />
 
         <div className="list-page-filterbar">
+          {isMobile ? (
+            <div className="mobile-search-bar">
+              <Input
+                allowClear
+                prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+                placeholder="Tìm tiêu đề, người tạo"
+                value={searchKeyword}
+                onChange={(event) => setSearchKeyword(event.target.value)}
+              />
+              <Button icon={<FilterOutlined />} onClick={() => setShowFilters(v => !v)} className="mobile-filter-toggle">
+                Lọc
+              </Button>
+              {showFilters && (
+                <Space direction="vertical" size={8} style={{ width: '100%', marginTop: 8 }}>
+                  <Select
+                    value={selectedStatus}
+                    options={APPROVAL_STATUS_OPTIONS}
+                    style={{ width: '100%' }}
+                    onChange={(value) => { setSelectedStatus(value); setSelectedRequestRowKeys([]); }}
+                  />
+                  <Checkbox
+                    checked={onlyMyPendingApprovals}
+                    onChange={(event) => { setOnlyMyPendingApprovals(event.target.checked); setSelectedRequestRowKeys([]); }}
+                  >
+                    Chỉ yêu cầu cần tôi duyệt
+                  </Checkbox>
+                  <Button
+                    size="small"
+                    onClick={() => { setSearchKeyword(''); setSelectedStatus('ALL'); setSelectedCategory('ALL'); setOnlyMyPendingApprovals(false); setSelectedRequestRowKeys([]); }}
+                  >
+                    Đặt lại lọc
+                  </Button>
+                </Space>
+              )}
+            </div>
+          ) : (
           <Space wrap align="center" style={{ width: '100%', justifyContent: 'space-between' }}>
             <Input.Search
               allowClear
@@ -2202,6 +2245,7 @@ export default function ApprovalPage() {
               </Button>
             </Space>
           </Space>
+          )}
         </div>
 
         {selectedCount > 0 && (
@@ -2236,6 +2280,62 @@ export default function ApprovalPage() {
       </Space>
 
       <div className="fixed-list-table approval-list-table">
+        {isMobile ? (
+          <div className="mobile-card-list">
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: 40 }}><Tag>Đang tải...</Tag></div>
+            ) : filteredItems.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>Không có yêu cầu nào</div>
+            ) : filteredItems.map((record) => {
+              const statusMeta = getRequestStatusMeta(record.status);
+              const actionable = getActionableApproval(record, currentUserId);
+              const canAct = actionable && !['APPROVED', 'REJECTED'].includes(record.status);
+              const progress = getWorkflowProgress(record);
+              const percent = progress.totalSteps > 0 ? Math.round((progress.approvedSteps / progress.totalSteps) * 100) : 0;
+              return (
+                <div key={record.id} className="mobile-card-item approval-mobile-card">
+                  <div className="mobile-card-item__header" onClick={() => openDetailDrawer(record)}>
+                    <span className="mobile-card-item__title">{record.title || '-'}</span>
+                    <Tag className={`status-tag status-tag--${statusMeta.tone}`}>{statusMeta.label}</Tag>
+                  </div>
+                  <div className="mobile-card-item__meta" onClick={() => openDetailDrawer(record)}>
+                    <Tag color="blue" style={{ marginInlineEnd: 4 }}>{CATEGORY_LABELS[record.category] || record.category}</Tag>
+                    <span>{getUserDisplayText(userMap[record.created_by], record.created_by)}</span>
+                  </div>
+                  <div className="mobile-card-item__meta" onClick={() => openDetailDrawer(record)}>
+                    <span>{record.created_at ? dayjs(record.created_at).format('DD/MM/YYYY HH:mm') : ''}</span>
+                    <span className="approval-mobile-progress">{progress.approvedSteps}/{progress.totalSteps} bước</span>
+                  </div>
+                  {canAct && (
+                    <div className="approval-mobile-card__actions">
+                      <Button
+                        type="primary"
+                        size="small"
+                        icon={<CheckOutlined />}
+                        onClick={() => openActionModal(record, 'approve')}
+                      >
+                        Duyệt
+                      </Button>
+                      <Button
+                        danger
+                        size="small"
+                        icon={<CloseOutlined />}
+                        onClick={() => openActionModal(record, 'reject')}
+                      >
+                        Từ chối
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {filteredItems.length > pagination.pageSize && (
+              <div style={{ textAlign: 'center', padding: '12px 0' }}>
+                <Text type="secondary">Hiển thị {Math.min(pagination.pageSize, filteredItems.length)} / {filteredItems.length}</Text>
+              </div>
+            )}
+          </div>
+        ) : (
         <Table
           rowKey="id"
           rowSelection={rowSelection}
@@ -2253,6 +2353,7 @@ export default function ApprovalPage() {
           sticky
           size="middle"
         />
+        )}
       </div>
 
       <Modal
@@ -2530,6 +2631,19 @@ export default function ApprovalPage() {
         onSubmit={handleCreateApproval}
         onCancel={() => setCreateModalOpen(false)}
       />
+
+      {/* FAB for mobile */}
+      {isMobile && (
+        <Tooltip title="Tạo yêu cầu phê duyệt">
+          <Button
+            type="primary"
+            shape="circle"
+            icon={<PlusOutlined />}
+            className="erp-fab"
+            onClick={() => setCreateModalOpen(true)}
+          />
+        </Tooltip>
+      )}
       </>
       )}
     </div>

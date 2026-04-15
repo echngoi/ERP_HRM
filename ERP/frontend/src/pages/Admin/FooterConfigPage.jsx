@@ -18,6 +18,7 @@ import {
   Button,
   Card,
   Form,
+  Grid,
   Input,
   InputNumber,
   message,
@@ -65,6 +66,8 @@ const ICON_OPTIONS = [
 ];
 
 export default function FooterConfigPage() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -241,6 +244,7 @@ export default function FooterConfigPage() {
           loading={loading}
           pagination={false}
           size="middle"
+          scroll={{ x: 700 }}
         />
       </Card>
 
@@ -252,7 +256,9 @@ export default function FooterConfigPage() {
         confirmLoading={saving}
         okText="Lưu"
         cancelText="Huỷ"
-        width={540}
+        width={isMobile ? '100%' : 540}
+        className={isMobile ? 'erp-modal-mobile' : ''}
+        style={isMobile ? { top: 0, maxWidth: '100vw', margin: 0 } : undefined}
         destroyOnClose
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>

@@ -3,6 +3,7 @@ import {
   Alert,
   Avatar,
   Button,
+  DatePicker,
   Divider,
   Drawer,
   Form,
@@ -10,16 +11,21 @@ import {
   Input,
   message,
   Modal,
+  Select,
   Space,
   Spin,
+  Tabs,
   Tooltip,
   Typography,
   Upload,
 } from 'antd';
 import {
+  BankOutlined,
   CameraOutlined,
   ClockCircleOutlined,
   EditOutlined,
+  EnvironmentOutlined,
+  FileTextOutlined,
   SaveOutlined,
   UserOutlined,
 } from '@ant-design/icons';
@@ -78,10 +84,15 @@ export default function MyProfileModal({ open, onClose }) {
     form.setFieldsValue({
       phone: profile?.phone || '',
       email: profile?.email || '',
+      date_of_birth: profile?.date_of_birth ? dayjs(profile.date_of_birth) : null,
+      id_card_number: profile?.id_card_number || '',
       address_village: profile?.address_village || '',
       address_commune: profile?.address_commune || '',
       address_district: profile?.address_district || '',
       address_province: profile?.address_province || '',
+      bank_account_number: profile?.bank_account_number || '',
+      bank_account_name: profile?.bank_account_name || '',
+      bank_name: profile?.bank_name || '',
     });
   };
 
@@ -90,11 +101,21 @@ export default function MyProfileModal({ open, onClose }) {
       const values = await form.validateFields();
       setSaving(true);
 
-      const editableFields = ['phone', 'address_village', 'address_commune', 'address_district', 'address_province', 'email'];
+      const editableFields = [
+        'phone', 'email', 'date_of_birth', 'id_card_number',
+        'address_village', 'address_commune', 'address_district', 'address_province',
+        'bank_account_number', 'bank_account_name', 'bank_name',
+      ];
       const changes = {};
       editableFields.forEach(field => {
-        if (values[field] !== undefined && values[field] !== (profile?.[field] || '')) {
-          changes[field] = values[field];
+        let newVal = values[field];
+        let oldVal = profile?.[field] || '';
+        if (field === 'date_of_birth') {
+          newVal = newVal ? dayjs(newVal).format('YYYY-MM-DD') : '';
+          oldVal = oldVal || '';
+        }
+        if (newVal !== undefined && newVal !== oldVal) {
+          changes[field] = newVal;
         }
       });
 
@@ -136,6 +157,154 @@ export default function MyProfileModal({ open, onClose }) {
     </div>
   );
 
+  /* ── Tab data for grouped display ── */
+  const personalRows = () => (
+    <>
+      {renderRow('Username', profile.username)}
+      {renderRow('Họ tên', profile.full_name)}
+      {renderRow('Vị trí', profile.position)}
+      {renderRow('Phòng ban', profile.department_name)}
+      {renderRow('Số căn cước', profile.id_card_number)}
+      {renderRow('Ngày sinh', profile.date_of_birth)}
+    </>
+  );
+
+  const contactRows = () => (
+    <>
+      {renderRow('Email', profile.email)}
+      {renderRow('Số điện thoại', profile.phone)}
+      {renderRow('Thôn/Xóm', profile.address_village)}
+      {renderRow('Xã/Phường', profile.address_commune)}
+      {renderRow('Quận/Huyện', profile.address_district)}
+      {renderRow('Tỉnh/Thành phố', profile.address_province)}
+    </>
+  );
+
+  const bankRows = () => (
+    <>
+      {renderRow('Số tài khoản', profile.bank_account_number)}
+      {renderRow('Tên chủ TK', profile.bank_account_name)}
+      {renderRow('Ngân hàng', profile.bank_name)}
+    </>
+  );
+
+  const contractRows = () => (
+    <>
+      {renderRow('Ngày vào làm', profile.date_joined_company)}
+      {renderRow('Trạng thái HĐ', CONTRACT_STATUS_MAP[profile.contract_status] || profile.contract_status)}
+      {(profile.contract_status === 'FIXED_TERM' || profile.contract_status === 'INDEFINITE') && renderRow('Ngày bắt đầu HĐ', profile.contract_start)}
+      {profile.contract_status === 'FIXED_TERM' && renderRow('Ngày kết thúc HĐ', profile.contract_end)}
+      {renderRow('Trạng thái LV', WORK_STATUS_MAP[profile.work_status] || profile.work_status)}
+    </>
+  );
+
+  /* ── Edit form fields grouped by tab ── */
+  const editPersonalFields = () => (
+    <>
+      <Form.Item name="avatar" label="Ảnh đại diện">
+        <Upload listType="picture" maxCount={1} beforeUpload={() => false}>
+          <Button icon={<CameraOutlined />}>Chọn ảnh mới</Button>
+        </Upload>
+      </Form.Item>
+      <Form.Item name="id_card_number" label="Số căn cước">
+        <Input placeholder="Nhập số căn cước" />
+      </Form.Item>
+      <Form.Item name="date_of_birth" label="Ngày sinh">
+        <DatePicker format="DD/MM/YYYY" placeholder="Chọn ngày sinh" style={{ width: '100%' }} />
+      </Form.Item>
+    </>
+  );
+
+  const editContactFields = () => (
+    <>
+      <Form.Item name="phone" label="Số điện thoại">
+        <Input placeholder="Nhập số điện thoại" />
+      </Form.Item>
+      <Form.Item name="email" label="Email">
+        <Input placeholder="Nhập email" />
+      </Form.Item>
+      <Form.Item name="address_village" label="Thôn/Xóm">
+        <Input placeholder="Nhập thôn/xóm" />
+      </Form.Item>
+      <Form.Item name="address_commune" label="Xã/Phường">
+        <Input placeholder="Nhập xã/phường" />
+      </Form.Item>
+      <Form.Item name="address_district" label="Quận/Huyện">
+        <Input placeholder="Nhập quận/huyện" />
+      </Form.Item>
+      <Form.Item name="address_province" label="Tỉnh/Thành phố">
+        <Input placeholder="Nhập tỉnh/thành phố" />
+      </Form.Item>
+    </>
+  );
+
+  const editBankFields = () => (
+    <>
+      <Form.Item name="bank_account_number" label="Số tài khoản">
+        <Input placeholder="Nhập số tài khoản" />
+      </Form.Item>
+      <Form.Item name="bank_account_name" label="Tên chủ TK">
+        <Input placeholder="Nhập tên chủ tài khoản" />
+      </Form.Item>
+      <Form.Item name="bank_name" label="Ngân hàng">
+        <Select
+          showSearch
+          placeholder="Chọn ngân hàng"
+          allowClear
+          options={VIETNAM_BANKS.map(b => ({ value: b, label: b }))}
+          filterOption={(input, option) =>
+            (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+          }
+        />
+      </Form.Item>
+    </>
+  );
+
+  const tabItems = profile ? [
+    { key: 'personal', label: 'Cá nhân', icon: <UserOutlined />, children: editing ? editPersonalFields() : personalRows() },
+    { key: 'contact', label: 'Liên hệ', icon: <EnvironmentOutlined />, children: editing ? editContactFields() : contactRows() },
+    { key: 'bank', label: 'Ngân hàng', icon: <BankOutlined />, children: editing ? editBankFields() : bankRows() },
+    { key: 'contract', label: 'Hợp đồng', icon: <FileTextOutlined />, children: contractRows() },
+  ] : [];
+
+  const pendingAlert = hasPending && (
+    <Alert
+      type="warning"
+      showIcon
+      icon={<ClockCircleOutlined />}
+      message="Thông tin cập nhật đang chờ phê duyệt"
+      description={isMobile ? undefined : 'Bạn không thể gửi yêu cầu mới cho đến khi yêu cầu hiện tại được xử lý.'}
+      style={{ marginTop: 12 }}
+    />
+  );
+
+  const editButton = !editing && (
+    <div style={{ textAlign: 'center', marginTop: 16 }}>
+      {hasPending ? (
+        <Tooltip title="Bạn đang có yêu cầu cập nhật chờ phê duyệt">
+          <Button type="primary" icon={<EditOutlined />} disabled block={isMobile}>
+            Chỉnh sửa thông tin
+          </Button>
+        </Tooltip>
+      ) : (
+        <Button type="primary" icon={<EditOutlined />} onClick={handleEdit} block={isMobile}>
+          Chỉnh sửa thông tin
+        </Button>
+      )}
+    </div>
+  );
+
+  const saveButtons = editing && (
+    <div style={{ textAlign: 'right', marginTop: 12 }}>
+      <Space style={{ width: isMobile ? '100%' : undefined }} direction={isMobile ? 'vertical' : 'horizontal'}>
+        <Button onClick={() => setEditing(false)} block={isMobile}>Hủy</Button>
+        <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave} block={isMobile}>
+          Gửi yêu cầu cập nhật
+        </Button>
+      </Space>
+    </div>
+  );
+
   const profileContent = loading ? (
     <div style={{ textAlign: 'center', padding: 60 }}>
       <Spin size="large" />
@@ -147,7 +316,7 @@ export default function MyProfileModal({ open, onClose }) {
         <Avatar
           src={profile.avatar_url}
           icon={!profile.avatar_url && <UserOutlined />}
-          size={isMobile ? 72 : 80}
+          size={isMobile ? 64 : 80}
           style={{
             backgroundColor: profile.avatar_url ? undefined : '#1677ff',
             border: '3px solid #f0f0f0',
@@ -159,88 +328,58 @@ export default function MyProfileModal({ open, onClose }) {
         </div>
       </div>
 
-      {!editing ? (
-        <>
-          <Divider style={{ margin: '12px 0' }} />
-          {renderRow('Username', profile.username)}
-          {renderRow('Email', profile.email)}
-          {renderRow('Số điện thoại', profile.phone)}
-          {renderRow('Số căn cước', profile.id_card_number)}
-          {renderRow('Ngày sinh', profile.date_of_birth)}
-          {renderRow('Quê quán', [profile.address_village, profile.address_commune, profile.address_district, profile.address_province].filter(Boolean).join(', '))}
-          {renderRow('Số tài khoản', profile.bank_account_number)}
-          {renderRow('Tên chủ TK', profile.bank_account_name)}
-          {renderRow('Ngân hàng', profile.bank_name)}
-          {renderRow('Ngày vào làm', profile.date_joined_company)}
-          {renderRow('Trạng thái HĐ', CONTRACT_STATUS_MAP[profile.contract_status] || profile.contract_status)}
-          {(profile.contract_status === 'FIXED_TERM' || profile.contract_status === 'INDEFINITE') && renderRow('Ngày bắt đầu HĐ', profile.contract_start)}
-          {profile.contract_status === 'FIXED_TERM' && renderRow('Ngày kết thúc HĐ', profile.contract_end)}
-          {renderRow('Trạng thái LV', WORK_STATUS_MAP[profile.work_status] || profile.work_status)}
+      {editing && (
+        <Text type="secondary" style={{ display: 'block', marginBottom: 8, fontSize: 12, textAlign: 'center' }}>
+          Sau khi lưu, thông tin sẽ được gửi đến người phụ trách để duyệt.
+        </Text>
+      )}
 
-          {hasPending && (
-            <Alert
-              type="warning"
-              showIcon
-              icon={<ClockCircleOutlined />}
-              message="Thông tin cập nhật đang chờ phê duyệt"
-              description={isMobile ? undefined : 'Bạn không thể gửi yêu cầu mới cho đến khi yêu cầu hiện tại được xử lý.'}
-              style={{ marginTop: 16 }}
-            />
-          )}
-
-          <div style={{ textAlign: 'center', marginTop: 20 }}>
-            {hasPending ? (
-              <Tooltip title="Bạn đang có yêu cầu cập nhật chờ phê duyệt">
-                <Button type="primary" icon={<EditOutlined />} disabled block={isMobile}>
-                  Chỉnh sửa thông tin
-                </Button>
-              </Tooltip>
-            ) : (
-              <Button type="primary" icon={<EditOutlined />} onClick={handleEdit} block={isMobile}>
-                Chỉnh sửa thông tin
-              </Button>
-            )}
-          </div>
-        </>
+      {isMobile ? (
+        /* ── Mobile: Tabbed layout ── */
+        <Form form={form} layout="vertical" size="small" className="my-profile-form-mobile">
+          <Tabs
+            size="small"
+            items={tabItems.map(t => ({
+              key: t.key,
+              label: (
+                <span>{t.icon} {t.label}</span>
+              ),
+              children: t.children,
+            }))}
+          />
+          {pendingAlert}
+          {editButton}
+          {saveButtons}
+        </Form>
       ) : (
+        /* ── Desktop: Traditional layout ── */
         <>
-          <Divider style={{ margin: '12px 0' }}>Chỉnh sửa thông tin cá nhân</Divider>
-          <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
-            Bạn có thể cập nhật các trường bên dưới. Sau khi lưu, thông tin sẽ được gửi đến người phụ trách để duyệt.
-          </Text>
-          <Form form={form} layout="vertical" size="middle">
-            <Form.Item name="avatar" label="Ảnh đại diện">
-              <Upload listType="picture" maxCount={1} beforeUpload={() => false}>
-                <Button icon={<CameraOutlined />}>Chọn ảnh mới</Button>
-              </Upload>
-            </Form.Item>
-            <Form.Item name="phone" label="Số điện thoại">
-              <Input placeholder="Nhập số điện thoại" />
-            </Form.Item>
-            <Form.Item name="email" label="Email">
-              <Input placeholder="Nhập email" />
-            </Form.Item>
-            <Form.Item name="address_village" label="Thôn/Xóm">
-              <Input placeholder="Nhập thôn/xóm" />
-            </Form.Item>
-            <Form.Item name="address_commune" label="Xã/Phường">
-              <Input placeholder="Nhập xã/phường" />
-            </Form.Item>
-            <Form.Item name="address_district" label="Quận/Huyện">
-              <Input placeholder="Nhập quận/huyện" />
-            </Form.Item>
-            <Form.Item name="address_province" label="Tỉnh/Thành phố">
-              <Input placeholder="Nhập tỉnh/thành phố" />
-            </Form.Item>
-          </Form>
-          <div style={{ textAlign: 'right', marginTop: 12 }}>
-            <Space style={{ width: isMobile ? '100%' : undefined }} direction={isMobile ? 'vertical' : 'horizontal'}>
-              <Button onClick={() => setEditing(false)} block={isMobile}>Hủy</Button>
-              <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave} block={isMobile}>
-                Gửi yêu cầu cập nhật
-              </Button>
-            </Space>
-          </div>
+          {!editing ? (
+            <>
+              <Divider style={{ margin: '12px 0' }} />
+              {personalRows()}
+              <Divider orientation="left" style={{ margin: '12px 0', fontSize: 13 }}>Liên hệ</Divider>
+              {contactRows()}
+              <Divider orientation="left" style={{ margin: '12px 0', fontSize: 13 }}>Ngân hàng</Divider>
+              {bankRows()}
+              <Divider orientation="left" style={{ margin: '12px 0', fontSize: 13 }}>Hợp đồng</Divider>
+              {contractRows()}
+              {pendingAlert}
+              {editButton}
+            </>
+          ) : (
+            <>
+              <Divider style={{ margin: '12px 0' }}>Chỉnh sửa thông tin cá nhân</Divider>
+              <Form form={form} layout="vertical" size="middle">
+                {editPersonalFields()}
+                <Divider orientation="left" style={{ margin: '12px 0', fontSize: 13 }}>Liên hệ</Divider>
+                {editContactFields()}
+                <Divider orientation="left" style={{ margin: '12px 0', fontSize: 13 }}>Ngân hàng</Divider>
+                {editBankFields()}
+              </Form>
+              {saveButtons}
+            </>
+          )}
         </>
       )}
     </div>

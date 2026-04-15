@@ -28,6 +28,11 @@ SELF_EDITABLE_FIELDS = [
     "address_district",
     "address_province",
     "email",
+    "date_of_birth",
+    "id_card_number",
+    "bank_account_number",
+    "bank_account_name",
+    "bank_name",
 ]
 
 

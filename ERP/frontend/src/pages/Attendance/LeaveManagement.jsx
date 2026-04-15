@@ -6,6 +6,7 @@ import {
   Col,
   Descriptions,
   Form,
+  Grid,
   InputNumber,
   message,
   Modal,
@@ -139,6 +140,8 @@ function MyLeaveCard() {
 
 /* ── Balance Table (admin view) ──────────────────────── */
 function BalanceTable() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [loading, setLoading] = useState(false);
   const [balances, setBalances] = useState([]);
   const [year, setYear] = useState(dayjs().year());
@@ -297,7 +300,7 @@ function BalanceTable() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               allowClear
-              style={{ width: 200 }}
+              style={{ width: isMobile ? '100%' : 200 }}
             />
             <Select value={year} onChange={setYear} style={{ width: 100 }}>
               {[dayjs().year() - 1, dayjs().year(), dayjs().year() + 1].map(y => (
@@ -328,6 +331,9 @@ function BalanceTable() {
         confirmLoading={saving}
         okText="Lưu"
         cancelText="Hủy"
+        width={isMobile ? '100%' : undefined}
+        className={isMobile ? 'erp-modal-mobile' : ''}
+        style={isMobile ? { top: 0, maxWidth: '100vw', margin: 0 } : undefined}
       >
         {editModal.record && (
           <div style={{ marginBottom: 16 }}>

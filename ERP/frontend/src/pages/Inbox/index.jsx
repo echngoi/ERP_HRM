@@ -13,7 +13,7 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
-import { EditOutlined, PaperClipOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
+import { EditOutlined, PaperClipOutlined, PlusOutlined, SearchOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
@@ -74,6 +74,7 @@ function getRelativeTimeLabel(createdAt) {
 
 export default function InboxPage() {
   const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const navigate = useNavigate();
   const currentUserId = getCurrentUserId();
   const [items, setItems] = useState([]);
@@ -316,6 +317,7 @@ export default function InboxPage() {
   return (
     <div className="fixed-list-page inbox-list-page">
       <Space direction="vertical" size="small" style={{ width: '100%' }} className="fixed-list-page-header inbox-list-header">
+        {!isMobile && (
         <Space style={{ width: '100%', justifyContent: 'space-between' }} align="center" className="list-page-titlebar">
           <Title
             level={4}
@@ -338,33 +340,54 @@ export default function InboxPage() {
             Soạn báo cáo
           </Button>
         </Space>
+        )}
 
         <div className="inbox-stat-row">
           <div className="inbox-stat-chip-wrap">
             <div className="inbox-stat-chip inbox-stat-chip-unread">
-              <span className="inbox-stat-chip__label">Báo cáo chưa đọc</span>
+              <span className="inbox-stat-chip__label">Chưa đọc</span>
               <span className="inbox-stat-chip__value inbox-stat-number-unread">{unreadCount}</span>
             </div>
             <div className="inbox-stat-chip inbox-stat-chip-today">
-              <span className="inbox-stat-chip__label">Báo cáo trong hôm nay</span>
+              <span className="inbox-stat-chip__label">Hôm nay</span>
               <span className="inbox-stat-chip__value inbox-stat-number-today">{inboxStats.todayCount}</span>
             </div>
           </div>
         </div>
 
-        <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap className="list-page-filterbar">
-          <Radio.Group
-            optionType="button"
-            buttonStyle="solid"
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-          >
-            <Radio.Button value="all">Tất cả</Radio.Button>
-            <Radio.Button value="unread">Chưa đọc</Radio.Button>
-            <Radio.Button value="important">Quan trọng</Radio.Button>
-          </Radio.Group>
-
-          <Space wrap>
+        {isMobile ? (
+          <div className="mobile-search-bar">
+            <Radio.Group
+              optionType="button"
+              buttonStyle="solid"
+              size="small"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+            >
+              <Radio.Button value="all">Tất cả</Radio.Button>
+              <Radio.Button value="unread">Chưa đọc</Radio.Button>
+              <Radio.Button value="important">Quan trọng</Radio.Button>
+            </Radio.Group>
+            <Input
+              allowClear
+              prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+              placeholder="Tìm tiêu đề, người gửi"
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+            />
+          </div>
+        ) : (
+          <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap className="list-page-filterbar">
+            <Radio.Group
+              optionType="button"
+              buttonStyle="solid"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+            >
+              <Radio.Button value="all">Tất cả</Radio.Button>
+              <Radio.Button value="unread">Chưa đọc</Radio.Button>
+              <Radio.Button value="important">Quan trọng</Radio.Button>
+            </Radio.Group>
             <Search
               allowClear
               placeholder="Tìm theo tiêu đề hoặc người gửi"
@@ -373,7 +396,7 @@ export default function InboxPage() {
               onChange={(event) => setKeyword(event.target.value)}
             />
           </Space>
-        </Space>
+        )}
 
         {keyword && (
           <Text type="secondary">
@@ -385,6 +408,35 @@ export default function InboxPage() {
       </Space>
 
       <div className="fixed-list-table">
+        {isMobile ? (
+          <div className="mobile-card-list">
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: 40 }}><Tag>Đang tải...</Tag></div>
+            ) : filteredItems.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>Không có tin nhắn nào</div>
+            ) : filteredItems.map((record) => {
+              const recipient = getUserRecipient(record, currentUserId);
+              const isUnread = Boolean(recipient && !recipient.is_read);
+              const isSent = record.sender === currentUserId;
+              return (
+                <div key={record.id} className={`mobile-card-item${isUnread ? ' mobile-card-item--unread' : ''}`} onClick={() => navigate(`/messages/${record.id}`)}>
+                  <div className="mobile-card-item__header">
+                    <span className="mobile-card-item__title" style={{ fontWeight: isUnread ? 700 : 400 }}>
+                      {record.subject || '(Không có tiêu đề)'}
+                    </span>
+                    <Tag className={`status-tag ${isSent ? 'status-tag--processing' : 'status-tag--success'}`} style={{ flexShrink: 0 }}>
+                      {isSent ? 'Gửi' : 'Đến'}
+                    </Tag>
+                  </div>
+                  <div className="mobile-card-item__meta">
+                    <span>{getUserDisplayText(userMap[record.sender], record.sender)}</span>
+                    <span>{getRelativeTimeLabel(record.created_at)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
         <Table
           rowKey="id"
           loading={loading}
@@ -408,7 +460,21 @@ export default function InboxPage() {
           sticky
           size="middle"
         />
+        )}
       </div>
+
+      {/* FAB for mobile */}
+      {isMobile && (
+        <Tooltip title="Soạn báo cáo">
+          <Button
+            type="primary"
+            shape="circle"
+            icon={<EditOutlined />}
+            className="erp-fab"
+            onClick={() => navigate('/messages/compose')}
+          />
+        </Tooltip>
+      )}
     </div>
   );
 }

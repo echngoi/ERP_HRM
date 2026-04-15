@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { Checkbox, Empty, Modal, Space, Tag, Typography } from 'antd';
+import { Checkbox, Empty, Grid, Modal, Space, Tag, Typography } from 'antd';
 
 const { Text } = Typography;
 
@@ -13,6 +13,8 @@ export default function AssignPermissionsModal({
   onCancel,
   onSubmit,
 }) {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   useEffect(() => {
     if (!open) return;
   }, [open]);
@@ -40,6 +42,9 @@ export default function AssignPermissionsModal({
       onCancel={onCancel}
       onOk={onSubmit}
       destroyOnHidden
+      width={isMobile ? '100%' : undefined}
+      className={isMobile ? 'erp-modal-mobile' : ''}
+      style={isMobile ? { top: 0, maxWidth: '100vw', margin: 0 } : undefined}
     >
       {options.length === 0 ? (
         <Empty description="Chưa có quyền nào" />

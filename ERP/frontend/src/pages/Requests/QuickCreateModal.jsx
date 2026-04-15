@@ -3,6 +3,7 @@ import {
   AutoComplete,
   Col,
   Form,
+  Grid,
   Input,
   Modal,
   Row,
@@ -27,6 +28,8 @@ function normalizeList(payload) {
 
 export default function QuickCreateModal({ open, submitting, onSubmit, onCancel }) {
   const [form] = Form.useForm();
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const currentUserId = getCurrentUserId();
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -126,7 +129,9 @@ export default function QuickCreateModal({ open, submitting, onSubmit, onCancel 
       cancelText="Hủy"
       confirmLoading={submitting}
       destroyOnClose
-      width={520}
+      width={isMobile ? '100%' : 520}
+      className={isMobile ? 'erp-modal-mobile' : ''}
+      style={isMobile ? { top: 0, maxWidth: '100vw', margin: 0, paddingBottom: 0 } : undefined}
     >
       <Form
         form={form}

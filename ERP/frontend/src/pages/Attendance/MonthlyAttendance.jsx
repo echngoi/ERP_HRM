@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Card, DatePicker, Select, Button, Row, Col, Typography, message,
-  Space, Tooltip, Spin, Tag, Statistic, Empty, Alert, Tabs, Table,
+  Space, Tooltip, Spin, Tag, Statistic, Empty, Alert, Tabs, Table, Grid, Dropdown,
 } from 'antd';
 import {
   CalendarOutlined, SearchOutlined, CheckCircleOutlined,
   CloseCircleOutlined, UserOutlined, PrinterOutlined,
-  WarningOutlined, DollarOutlined, FileExcelOutlined,
+  WarningOutlined, DollarOutlined, FileExcelOutlined, MoreOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { getAttendanceReport, getEmployees, getMyAttendanceInfo, exportAttendanceReport, getLeaveRequests, getOvertimeRequests, getOffsiteRequests } from '../../services/attendanceApi';
@@ -83,6 +83,8 @@ function calcStandardDays(days) {
 
 /* ── component ───────────────────────────────────────── */
 export default function MonthlyAttendance() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [month, setMonth]             = useState(dayjs().startOf('month'));
   const [employees, setEmployees]     = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -240,9 +242,11 @@ export default function MonthlyAttendance() {
         .att-table tr:hover td.stt-cell { background: #e6f7ff !important; }
       `}</style>
 
-      <Title level={4} style={{ marginBottom: 16 }}>
-        <CalendarOutlined /> Bảng chấm công tháng
-      </Title>
+      {!isMobile && (
+        <Title level={4} style={{ marginBottom: 16 }}>
+          <CalendarOutlined /> Bảng chấm công tháng
+        </Title>
+      )}
 
       {/* ── No mapping alert ── */}
       {attInfo && !canViewAll && !attInfo.attendance_employee_id && (
@@ -255,74 +259,91 @@ export default function MonthlyAttendance() {
       )}
 
       {/* ── Filters ── */}
-      <Card size="small" style={{ marginBottom: 16 }} className="no-print">
-        <Row gutter={[16, 12]} align="middle">
-          <Col>
-            <Text type="secondary" style={{ marginRight: 8 }}>Tháng:</Text>
+      <Card size="small" style={{ marginBottom: isMobile ? 8 : 16 }} className="no-print att-filter-card">
+        <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 12]} align="middle">
+          <Col xs={24} sm="auto">
+            {!isMobile && <Text type="secondary" style={{ marginRight: 8 }}>Tháng:</Text>}
             <DatePicker
               picker="month"
               value={month}
               onChange={v => v && setMonth(v.startOf('month'))}
               format="MM/YYYY"
               allowClear={false}
+              style={isMobile ? { width: '100%' } : undefined}
+              size={isMobile ? 'middle' : undefined}
             />
           </Col>
           {canViewAll && (
-            <Col>
-              <Text type="secondary" style={{ marginRight: 8 }}>Nhân viên:</Text>
+            <Col xs={24} sm="auto">
+              {!isMobile && <Text type="secondary" style={{ marginRight: 8 }}>Nhân viên:</Text>}
               <Select
                 allowClear
                 placeholder="Tất cả nhân viên"
-                style={{ width: 240 }}
+                style={{ width: isMobile ? '100%' : 240 }}
                 value={selectedUser}
                 onChange={setSelectedUser}
                 showSearch
                 optionFilterProp="label"
+                size={isMobile ? 'middle' : undefined}
                 options={employees.map(e => ({ value: e.user_id, label: `${e.user_id} - ${e.display_name}` }))}
               />
             </Col>
           )}
-          <Col>
-            <Space>
-              <Button type="primary" icon={<SearchOutlined />} onClick={fetchReport} loading={loading}>
-                Xem
-              </Button>
-              <Button icon={<PrinterOutlined />} onClick={handlePrint}>
-                In
-              </Button>
-              {canViewAll && (
-                <Button icon={<FileExcelOutlined />} onClick={handleExport} loading={exporting}
-                  style={{ color: '#217346', borderColor: '#217346' }}>
-                  Xuất Excel
+          <Col xs={24} sm="auto">
+            {isMobile ? (
+              <Space style={{ width: '100%' }}>
+                <Button type="primary" icon={<SearchOutlined />} onClick={fetchReport} loading={loading}>
+                  Xem
                 </Button>
-              )}
-            </Space>
+                <Dropdown menu={{ items: [
+                  { key: 'print', icon: <PrinterOutlined />, label: 'In', onClick: handlePrint },
+                  ...(canViewAll ? [{ key: 'export', icon: <FileExcelOutlined />, label: 'Xuất Excel', onClick: handleExport }] : []),
+                ] }} trigger={['click']}>
+                  <Button icon={<MoreOutlined />} loading={exporting} />
+                </Dropdown>
+              </Space>
+            ) : (
+              <Space>
+                <Button type="primary" icon={<SearchOutlined />} onClick={fetchReport} loading={loading}>
+                  Xem
+                </Button>
+                <Button icon={<PrinterOutlined />} onClick={handlePrint}>
+                  In
+                </Button>
+                {canViewAll && (
+                  <Button icon={<FileExcelOutlined />} onClick={handleExport} loading={exporting}
+                    style={{ color: '#217346', borderColor: '#217346' }}>
+                    Xuất Excel
+                  </Button>
+                )}
+              </Space>
+            )}
           </Col>
         </Row>
       </Card>
 
       {/* ── Stats ── */}
       {reportData && (
-        <Row gutter={16} style={{ marginBottom: 16 }} className="no-print">
-          <Col xs={8} md={4}>
-            <Card size="small">
+        <Row gutter={isMobile ? 8 : 16} style={{ marginBottom: isMobile ? 8 : 16 }} className="no-print att-stats-row">
+          <Col xs={12} md={4}>
+            <Card size="small" className="att-stat-card">
               <Statistic title="Nhân viên" value={empList.length} prefix={<UserOutlined />} />
             </Card>
           </Col>
-          <Col xs={8} md={4}>
-            <Card size="small">
-              <Statistic title="Tổng đi làm" value={totalPresent}
+          <Col xs={12} md={4}>
+            <Card size="small" className="att-stat-card">
+              <Statistic title="Đi làm" value={totalPresent}
                 valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} />
             </Card>
           </Col>
-          <Col xs={8} md={4}>
-            <Card size="small">
-              <Statistic title="Tổng vắng" value={totalAbsent}
+          <Col xs={12} md={4}>
+            <Card size="small" className="att-stat-card">
+              <Statistic title="Vắng" value={totalAbsent}
                 valueStyle={{ color: '#ff4d4f' }} prefix={<CloseCircleOutlined />} />
             </Card>
           </Col>
-          <Col xs={8} md={4}>
-            <Card size="small">
+          <Col xs={12} md={4}>
+            <Card size="small" className="att-stat-card">
               <Statistic title="Đi muộn" value={totalLate}
                 valueStyle={{ color: '#fa8c16' }} />
             </Card>
@@ -331,15 +352,15 @@ export default function MonthlyAttendance() {
       )}
 
       {/* ── Tabs: Bảng chấm công + Đi muộn về sớm ── */}
-      <Tabs defaultActiveKey="grid" items={[
+      <Tabs defaultActiveKey="grid" size={isMobile ? 'small' : 'middle'} className="att-tabs" items={[
         {
           key: 'grid',
-          label: <span><CalendarOutlined /> Bảng chấm công</span>,
+          label: <span><CalendarOutlined /> {isMobile ? 'Chấm công' : 'Bảng chấm công'}</span>,
           children: (
             <Card
               size="small"
-              title={
-                <Space>
+              title={isMobile ? null : (
+                <Space wrap>
                   <CalendarOutlined />
                   <span>Bảng chấm công tháng {month.format('MM/YYYY')}</span>
                   <Tag color="green"><span className="cell-badge green" /> Đi làm</Tag>
@@ -349,7 +370,7 @@ export default function MonthlyAttendance() {
                   <Tag color="orange"><span className="cell-badge" style={{ background: '#d46b08', display: 'inline-block', width: 8, height: 8, borderRadius: '50%' }} /> Nghỉ phép (KL)</Tag>
                   <Tag color="purple"><span className="cell-badge" style={{ background: '#722ed1', display: 'inline-block', width: 8, height: 8, borderRadius: '50%' }} /> Ngoại viện</Tag>
                 </Space>
-              }
+              )}
               styles={{ body: { padding: 0, overflow: 'auto' } }}
             >
               <Spin spinning={loading}>

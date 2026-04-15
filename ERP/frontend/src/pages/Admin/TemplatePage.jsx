@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Form,
+  Grid,
   Input,
   message,
   Modal,
@@ -48,6 +49,8 @@ function createField(name = '', label = '', input = 'text', required = false) {
 }
 
 export default function TemplatePage() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [items, setItems] = useState([]);
   const [workflows, setWorkflows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -318,7 +321,7 @@ export default function TemplatePage() {
           <Button type="primary" onClick={openCreateModal}>
             Tạo mẫu mới
           </Button>
-          <Button onClick={loadData}>Tải lại</Button>
+          {!isMobile && <Button onClick={loadData}>Tải lại</Button>}
         </Space>
       )}
     >
@@ -333,7 +336,9 @@ export default function TemplatePage() {
         confirmLoading={submitting}
         onCancel={closeModal}
         onOk={submitTemplate}
-        width={900}
+        width={isMobile ? '100%' : 900}
+        className={isMobile ? 'erp-modal-mobile' : ''}
+        style={isMobile ? { top: 0, maxWidth: '100vw', margin: 0 } : undefined}
         destroyOnClose
       >
         <Form form={createForm} layout="vertical">
@@ -412,19 +417,19 @@ export default function TemplatePage() {
                       placeholder="Tên trường (name)"
                       value={field.name}
                       onChange={(e) => changeField(fieldIndex, 'name', e.target.value)}
-                      style={{ width: 180 }}
+                      style={{ width: isMobile ? '100%' : 180 }}
                     />
                     <Input
                       placeholder="Nhãn (label)"
                       value={field.label}
                       onChange={(e) => changeField(fieldIndex, 'label', e.target.value)}
-                      style={{ width: 180 }}
+                      style={{ width: isMobile ? '100%' : 180 }}
                     />
                     <Select
                       value={field.input}
                       options={INPUT_TYPE_OPTIONS}
                       onChange={(value) => changeField(fieldIndex, 'input', value)}
-                      style={{ width: 140 }}
+                      style={{ width: isMobile ? '100%' : 140 }}
                     />
                     <Select
                       value={field.required}
@@ -433,7 +438,7 @@ export default function TemplatePage() {
                         { label: 'Bắt buộc', value: true },
                       ]}
                       onChange={(value) => changeField(fieldIndex, 'required', value)}
-                      style={{ width: 130 }}
+                      style={{ width: isMobile ? '100%' : 130 }}
                     />
                     <Button
                       onClick={() => removeField(fieldIndex)}
@@ -456,14 +461,14 @@ export default function TemplatePage() {
                               placeholder="Nhãn"
                               value={option.label || ''}
                               onChange={(e) => changeFieldOption(fieldIndex, optionIndex, 'label', e.target.value)}
-                              style={{ width: 150 }}
+                              style={{ width: isMobile ? '100%' : 150 }}
                               size="small"
                             />
                             <Input
                               placeholder="Giá trị"
                               value={option.value || ''}
                               onChange={(e) => changeFieldOption(fieldIndex, optionIndex, 'value', e.target.value)}
-                              style={{ width: 150 }}
+                              style={{ width: isMobile ? '100%' : 150 }}
                               size="small"
                             />
                             <Button

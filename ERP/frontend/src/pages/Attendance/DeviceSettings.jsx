@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Card, Row, Col, Button, Space, Typography, Descriptions,
+  Card, Row, Col, Grid, Button, Space, Typography, Descriptions,
   Tag, message, Popconfirm, Alert, Spin, Divider, List
 } from 'antd';
 import {
@@ -14,6 +14,8 @@ import { getDeviceStatus, getDeviceTime, syncDeviceTime, restartDevice, getSyncL
 const { Text, Title } = Typography;
 
 export default function DeviceSettings() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [device, setDevice]     = useState(null);
   const [time, setTime]         = useState(null);
   const [syncLogs, setSyncLogs] = useState([]);
@@ -104,7 +106,7 @@ export default function DeviceSettings() {
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Title level={3}>Cài đặt & Thiết bị</Title>
+      <Title level={isMobile ? 5 : 3}>Cài đặt & Thiết bị</Title>
 
       {/* ADMS Setup Guide */}
       {isAdms && (
@@ -139,9 +141,9 @@ export default function DeviceSettings() {
         />
       )}
 
-      <Row gutter={16}>
+      <Row gutter={[16, 16]}>
         {/* Device info */}
-        <Col span={14}>
+        <Col xs={24} lg={14}>
           <Card
             title={<Space><CheckCircleOutlined />Thông tin thiết bị</Space>}
             bordered={false}
@@ -278,7 +280,7 @@ export default function DeviceSettings() {
         </Col>
 
         {/* Time info */}
-        <Col span={10}>
+        <Col xs={24} lg={10}>
           <Card
             title={<Space><ClockCircleOutlined />Đồng hồ thiết bị</Space>}
             bordered={false}

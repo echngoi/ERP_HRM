@@ -16,9 +16,10 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
-import { CheckCircleOutlined, CloseCircleOutlined, DownOutlined, EyeOutlined, ThunderboltOutlined, FormOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, CloseCircleOutlined, DownOutlined, EyeOutlined, FilterOutlined, PlusOutlined, SearchOutlined, ThunderboltOutlined, FormOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api from '../../services/api';
 import { getCurrentUserId } from '../../services/auth';
@@ -205,6 +206,7 @@ function renderDeadline(deadline) {
 
 export default function RequestPage() {
   const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const currentUserId = getCurrentUserId();
   const [items, setItems] = useState([]);
   const [userMap, setUserMap] = useState({});
@@ -778,6 +780,7 @@ export default function RequestPage() {
     <PullToRefresh onRefresh={() => loadRequests({ page: pagination.current, pageSize: pagination.pageSize })}>
     <div className="fixed-list-page request-list-page">
       <Space direction="vertical" size="small" style={{ width: '100%' }} className="fixed-list-page-header request-list-header">
+        {!isMobile && (
         <Flex justify="space-between" align="center" wrap="wrap" gap={12} className="list-page-titlebar">
           <div>
             <Title level={4} style={{ margin: 0 }}>
@@ -812,31 +815,83 @@ export default function RequestPage() {
             </Button>
           </Dropdown>
         </Flex>
+        )}
 
-        <Row gutter={[12, 12]} className="list-page-filterbar">
-          <Col xs={24} sm={24} md={14} lg={9}>
-            <Input.Search
+        {isMobile ? (
+          <div className="mobile-search-bar">
+            <Input
               allowClear
-              placeholder="Tìm theo tiêu đề hoặc người gửi/nhận"
+              prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+              placeholder="Tìm tiêu đề, người gửi/nhận"
               value={searchKeyword}
               onChange={(event) => setSearchKeyword(event.target.value)}
             />
-          </Col>
-
-          <Col xs={24} sm={12} md={8} lg={6}>
             <Select
-              style={{ width: '100%' }}
               value={statusFilter}
               options={STATUS_OPTIONS}
               onChange={setStatusFilter}
+              popupMatchSelectWidth={false}
             />
-          </Col>
-        </Row>
+          </div>
+        ) : (
+          <Row gutter={[8, 8]} className="list-page-filterbar" align="middle">
+            <Col flex="auto">
+              <Input.Search
+                allowClear
+                placeholder="Tìm theo tiêu đề hoặc người gửi/nhận"
+                value={searchKeyword}
+                onChange={(event) => setSearchKeyword(event.target.value)}
+              />
+            </Col>
+            <Col xs={24} sm={12} md={8} lg={6}>
+              <Select
+                style={{ width: '100%' }}
+                value={statusFilter}
+                options={STATUS_OPTIONS}
+                onChange={setStatusFilter}
+              />
+            </Col>
+          </Row>
+        )}
 
         {error && <Alert type="error" message={error} showIcon />}
       </Space>
 
       <div className="fixed-list-table">
+        {isMobile ? (
+          <div className="mobile-card-list">
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: 40 }}><Tag>Đang tải...</Tag></div>
+            ) : items.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>Không có yêu cầu nào</div>
+            ) : items.map((record) => (
+              <div key={record.id} className="mobile-card-item" onClick={() => openDetailDrawer(record)}>
+                <div className="mobile-card-item__header">
+                  <span className="mobile-card-item__title">{record.title || '-'}</span>
+                  <RequestStatusTag status={record.status} />
+                </div>
+                <div className="mobile-card-item__meta">
+                  {record.created_by && <span>Người tạo: {getUserDisplayText(userMap[record.created_by], record.created_by)}</span>}
+                  {record.created_at && <span>{dayjs(record.created_at).format('DD/MM/YYYY HH:mm')}</span>}
+                </div>
+                {record.deadline && (
+                  <div className="mobile-card-item__meta">
+                    <span>Deadline: {dayjs(record.deadline).format('DD/MM/YYYY HH:mm')}</span>
+                  </div>
+                )}
+              </div>
+            ))}
+            {pagination.total > pagination.pageSize && (
+              <div style={{ textAlign: 'center', padding: '12px 0' }}>
+                <Space>
+                  <Button size="small" disabled={pagination.current <= 1} onClick={() => loadRequests({ page: pagination.current - 1, pageSize: pagination.pageSize })}>Trước</Button>
+                  <Text type="secondary">{pagination.current} / {Math.ceil(pagination.total / pagination.pageSize)}</Text>
+                  <Button size="small" disabled={pagination.current >= Math.ceil(pagination.total / pagination.pageSize)} onClick={() => loadRequests({ page: pagination.current + 1, pageSize: pagination.pageSize })}>Sau</Button>
+                </Space>
+              </div>
+            )}
+          </div>
+        ) : (
         <Table
           rowKey="id"
           loading={loading}
@@ -854,6 +909,7 @@ export default function RequestPage() {
           sticky
           size="middle"
         />
+        )}
       </div>
 
       <CreateRequestModal
@@ -965,6 +1021,28 @@ export default function RequestPage() {
           onChange={(e) => setReasonModal((prev) => ({ ...prev, reason: e.target.value }))}
         />
       </Modal>
+
+      {/* FAB for mobile */}
+      {isMobile && (
+        <Dropdown
+          menu={{
+            items: [
+              { key: 'quick', icon: <ThunderboltOutlined />, label: 'Tạo yêu cầu nhanh' },
+              { key: 'detailed', icon: <FormOutlined />, label: 'Tạo yêu cầu chi tiết' },
+            ],
+            onClick: ({ key }) => {
+              if (key === 'quick') openQuickCreateModal();
+              else openDetailedCreateModal();
+            },
+          }}
+          trigger={['click']}
+          placement="topRight"
+        >
+          <Tooltip title="Tạo yêu cầu mới">
+            <Button type="primary" shape="circle" icon={<PlusOutlined />} className="erp-fab" />
+          </Tooltip>
+        </Dropdown>
+      )}
     </div>
     </PullToRefresh>
   );

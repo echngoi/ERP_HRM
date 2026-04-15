@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
-  Table, Card, Row, Col, DatePicker, Select, Button,
+  Table, Card, Row, Col, Grid, DatePicker, Select, Button,
   Space, Tag, Typography, Input, message, Popconfirm, Tooltip
 } from 'antd';
 import {
@@ -24,6 +24,8 @@ const PUNCH_LABELS = {
 };
 
 export default function AttendancePage() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [data, setData]         = useState([]);
   const [total, setTotal]       = useState(0);
   const [loading, setLoading]   = useState(false);
@@ -152,8 +154,9 @@ export default function AttendancePage() {
       {/* Filters */}
       <Card bordered={false}>
         <Row gutter={[12, 12]} align="middle">
-          <Col>
+          <Col xs={24} sm={12} md={8}>
             <RangePicker
+              style={{ width: '100%' }}
               value={[
                 filters.date_from ? dayjs(filters.date_from) : null,
                 filters.date_to   ? dayjs(filters.date_to)   : null,
@@ -167,12 +170,12 @@ export default function AttendancePage() {
               format="DD/MM/YYYY"
             />
           </Col>
-          <Col>
+          <Col xs={12} sm={6} md={5}>
             <Select
               placeholder="Nhân viên"
               allowClear
               showSearch
-              style={{ width: 200 }}
+              style={{ width: '100%' }}
               filterOption={(input, opt) =>
                 opt.label?.toLowerCase().includes(input.toLowerCase())
               }
@@ -182,11 +185,11 @@ export default function AttendancePage() {
               }))}
             />
           </Col>
-          <Col>
+          <Col xs={12} sm={6} md={5}>
             <Select
               placeholder="Loại chấm công"
               allowClear
-              style={{ width: 160 }}
+              style={{ width: '100%' }}
               onChange={v => setFilters(f => ({ ...f, punch: v, page: 1 }))}
             >
               {Object.entries(PUNCH_LABELS).map(([k, v]) => (
@@ -196,8 +199,8 @@ export default function AttendancePage() {
               ))}
             </Select>
           </Col>
-          <Col>
-            <Button icon={<SearchOutlined />} type="primary" onClick={load}>
+          <Col xs={24} sm={6} md={4}>
+            <Button icon={<SearchOutlined />} type="primary" onClick={load} block={isMobile}>
               Tìm kiếm
             </Button>
           </Col>
@@ -209,22 +212,24 @@ export default function AttendancePage() {
         title={<Text strong>Lịch sử chấm công ({total} bản ghi)</Text>}
         bordered={false}
         extra={
-          <Space>
+          <Space wrap size={8}>
             <Tooltip title="Đồng bộ từ máy">
-              <Button icon={<SyncOutlined spin={syncing} />} onClick={handleSync} loading={syncing} type="primary">
+              <Button size={isMobile ? 'small' : 'middle'} icon={<SyncOutlined spin={syncing} />} onClick={handleSync} loading={syncing} type="primary">
                 Đồng bộ
               </Button>
             </Tooltip>
-            <Button icon={<DownloadOutlined />} onClick={exportCSV}>Xuất CSV</Button>
-            <Popconfirm
-              title="Xóa toàn bộ dữ liệu trên máy chấm công?"
-              description="Hành động này không thể hoàn tác."
-              onConfirm={handleClear}
-              okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }}
-            >
-              <Button icon={<DeleteOutlined />} danger>Xóa máy</Button>
-            </Popconfirm>
-            <Button icon={<ReloadOutlined />} onClick={load}>Làm mới</Button>
+            {!isMobile && <Button icon={<DownloadOutlined />} onClick={exportCSV}>Xuất CSV</Button>}
+            {!isMobile && (
+              <Popconfirm
+                title="Xóa toàn bộ dữ liệu trên máy chấm công?"
+                description="Hành động này không thể hoàn tác."
+                onConfirm={handleClear}
+                okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }}
+              >
+                <Button icon={<DeleteOutlined />} danger>Xóa máy</Button>
+              </Popconfirm>
+            )}
+            <Button size={isMobile ? 'small' : 'middle'} icon={<ReloadOutlined />} onClick={load}>Làm mới</Button>
           </Space>
         }
       >

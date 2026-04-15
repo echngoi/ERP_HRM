@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import {
   Card, List, Tag, Typography, Space, Badge,
-  Button, Alert, Statistic, Row, Col, Timeline, Tooltip
+  Button, Alert, Statistic, Row, Col, Grid, Timeline, Tooltip
 } from 'antd';
 import {
   ThunderboltOutlined, WifiOutlined, DisconnectOutlined,
@@ -43,6 +43,8 @@ const PUNCH_COLORS = { 0: 'green', 1: 'red', 2: 'orange', 3: 'blue', 4: 'purple'
 const PUNCH_LABELS = { 0: 'Vào ca', 1: 'Ra ca', 2: 'Nghỉ giải lao', 3: 'Trở lại', 4: 'Tăng ca vào', 5: 'Tăng ca ra' };
 
 export default function LiveMonitor() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [connected, setConnected]   = useState(false);
   const [records, setRecords]       = useState([]);
   const [total, setTotal]           = useState(0);
@@ -165,29 +167,30 @@ export default function LiveMonitor() {
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       {/* Header */}
-      <Row gutter={16} align="middle">
-        <Col flex="auto">
-          <Space align="center">
-            <ThunderboltOutlined style={{ fontSize: 24, color: '#faad14' }} />
-            <Title level={3} style={{ margin: 0 }}>Giám sát trực tiếp</Title>
+      <Row gutter={[8, 8]} align="middle">
+        <Col xs={24} md={12}>
+          <Space align="center" wrap>
+            <ThunderboltOutlined style={{ fontSize: isMobile ? 18 : 24, color: '#faad14' }} />
+            <Title level={isMobile ? 5 : 3} style={{ margin: 0 }}>Giám sát trực tiếp</Title>
             <Badge
               status={connected ? 'processing' : 'default'}
               text={
-                <Text style={{ color: connected ? '#52c41a' : '#999' }}>
+                <Text style={{ color: connected ? '#52c41a' : '#999', fontSize: isMobile ? 12 : 14 }}>
                   {connected ? 'Đang kết nối' : 'Ngắt kết nối'}
                 </Text>
               }
             />
           </Space>
         </Col>
-        <Col>
-          <Space>
-            <Text style={{ fontSize: 28, fontWeight: 700, fontFamily: 'monospace', color: '#1677ff' }}>
+        <Col xs={24} md={12} style={{ textAlign: isMobile ? 'left' : 'right' }}>
+          <Space wrap size={8}>
+            <Text style={{ fontSize: isMobile ? 20 : 28, fontWeight: 700, fontFamily: 'monospace', color: '#1677ff' }}>
               {now.format('HH:mm:ss')}
             </Text>
             <Text type="secondary">{now.format('DD/MM/YYYY')}</Text>
             <Tooltip title="Tải lại dữ liệu mới nhất từ DB">
               <Button
+                size={isMobile ? 'small' : 'middle'}
                 icon={<SyncOutlined spin={syncing} />}
                 onClick={refreshFromDB}
                 disabled={!connected}
@@ -195,20 +198,22 @@ export default function LiveMonitor() {
                 Làm mới
               </Button>
             </Tooltip>
-            <Tooltip title="Yêu cầu máy chấm công gửi lại toàn bộ log">
-              <Button
-                icon={<CloudDownloadOutlined />}
-                type="primary"
-                onClick={forceSync}
-                loading={syncing}
-                disabled={!connected}
-              >
-                Đồng bộ máy
-              </Button>
-            </Tooltip>
+            {!isMobile && (
+              <Tooltip title="Yêu cầu máy chấm công gửi lại toàn bộ log">
+                <Button
+                  icon={<CloudDownloadOutlined />}
+                  type="primary"
+                  onClick={forceSync}
+                  loading={syncing}
+                  disabled={!connected}
+                >
+                  Đồng bộ máy
+                </Button>
+              </Tooltip>
+            )}
             {connected
-              ? <Button icon={<DisconnectOutlined />} danger onClick={disconnect}>Ngắt</Button>
-              : <Button icon={<WifiOutlined />} type="primary" onClick={connect}>Kết nối</Button>
+              ? <Button size={isMobile ? 'small' : 'middle'} icon={<DisconnectOutlined />} danger onClick={disconnect}>Ngắt</Button>
+              : <Button size={isMobile ? 'small' : 'middle'} icon={<WifiOutlined />} type="primary" onClick={connect}>Kết nối</Button>
             }
           </Space>
         </Col>
@@ -217,8 +222,8 @@ export default function LiveMonitor() {
       {error && <Alert type="error" message={error} showIcon closable />}
 
       {/* Stats */}
-      <Row gutter={16}>
-        <Col span={8}>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} sm={8}>
           <Card bordered={false} style={{ background: 'linear-gradient(135deg,#e6f7ff,#bae7ff)', border: '1px solid #91d5ff' }}>
             <Statistic
               title="Tổng bản ghi trên máy"
@@ -228,7 +233,7 @@ export default function LiveMonitor() {
             />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={8}>
           <Card bordered={false} style={{ background: 'linear-gradient(135deg,#f6ffed,#d9f7be)', border: '1px solid #b7eb8f' }}>
             <Statistic
               title="Bản ghi mới nhất"
@@ -238,7 +243,7 @@ export default function LiveMonitor() {
             />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={8}>
           <Card bordered={false} style={{ background: 'linear-gradient(135deg,#fff7e6,#ffe7ba)', border: '1px solid #ffd591' }}>
             <Statistic
               title="Trạng thái kết nối"
@@ -253,9 +258,9 @@ export default function LiveMonitor() {
         </Col>
       </Row>
 
-      <Row gutter={16}>
+      <Row gutter={[16, 16]}>
         {/* Latest records */}
-        <Col span={14}>
+        <Col xs={24} lg={14}>
           <Card
             title={<Space><ThunderboltOutlined /><span>Bản ghi chấm công gần nhất</span></Space>}
             bordered={false}
@@ -289,7 +294,7 @@ export default function LiveMonitor() {
         </Col>
 
         {/* Activity log */}
-        <Col span={10}>
+        <Col xs={24} lg={10}>
           <Card
             title="Nhật ký hoạt động"
             bordered={false}

@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Input, message, Popconfirm, Select, Space, Table, Tag } from 'antd';
+import { Alert, Button, Grid, Input, message, Popconfirm, Select, Space, Table, Tag } from 'antd';
+import { SearchOutlined } from '@ant-design/icons';
 import api from '../../services/api';
 import AdminSectionPage from './AdminSectionPage';
 import { formatRoleDisplayName, normalizeList } from './utils';
 import UserFormModal from './UserFormModal';
 
 export default function UsersPage() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [items, setItems] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [rbacRoles, setRbacRoles] = useState([]);
@@ -268,23 +271,24 @@ export default function UsersPage() {
       badge={`${items.length} bản ghi`}
       description="Danh sách người dùng lấy trực tiếp từ API quản trị, có lọc theo vai trò và phòng ban."
       extra={(
-        <Space wrap>
-          <Input.Search
-            placeholder="Tìm tên đăng nhập, họ tên, email..."
+        <Space wrap size={8}>
+          <Input
+            prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+            placeholder="Tìm người dùng..."
             value={searchKeyword}
             onChange={(e) => setSearchKeyword(e.target.value)}
-            style={{ width: 250 }}
+            style={{ width: isMobile ? '100%' : 250 }}
             allowClear
           />
-          <Select value={roleFilter} options={roleFilterOptions} onChange={setRoleFilter} style={{ width: 180 }} />
+          <Select value={roleFilter} options={roleFilterOptions} onChange={setRoleFilter} style={{ width: isMobile ? '100%' : 180 }} />
           <Select
             value={departmentFilter}
             options={departmentOptions}
             onChange={setDepartmentFilter}
-            style={{ width: 180 }}
+            style={{ width: isMobile ? '100%' : 180 }}
           />
           <Button type="primary" onClick={openCreateModal}>Tạo người dùng</Button>
-          <Button onClick={loadData}>Tải lại</Button>
+          {!isMobile && <Button onClick={loadData}>Tải lại</Button>}
         </Space>
       )}
     >

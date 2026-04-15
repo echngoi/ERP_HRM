@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Drawer, Empty, List, message, Popconfirm, Space, Table, Tag, Typography } from 'antd';
+import { Alert, Button, Drawer, Empty, Grid, List, message, Popconfirm, Space, Table, Tag, Typography } from 'antd';
 import { TeamOutlined } from '@ant-design/icons';
 import api from '../../services/api';
 import AdminSectionPage from './AdminSectionPage';
@@ -9,6 +9,8 @@ import { normalizeList } from './utils';
 const { Text } = Typography;
 
 export default function DepartmentsPage() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [items, setItems] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -223,7 +225,7 @@ export default function DepartmentsPage() {
       extra={(
         <Space wrap>
           <Button type="primary" onClick={openCreateModal}>Thêm phòng ban</Button>
-          <Button onClick={loadData}>Tải lại</Button>
+          {!isMobile && <Button onClick={loadData}>Tải lại</Button>}
         </Space>
       )}
     >
@@ -234,7 +236,7 @@ export default function DepartmentsPage() {
         title={memberDrawer.department ? `Nhân sự phòng ${memberDrawer.department.name}` : 'Nhân sự phòng ban'}
         open={memberDrawer.open}
         onClose={closeMemberDrawer}
-        width={480}
+        width={isMobile ? '100%' : 480}
       >
         {memberDrawer.error ? (
           <Alert type="error" showIcon message={memberDrawer.error} style={{ marginBottom: 12 }} />

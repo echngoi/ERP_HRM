@@ -5,6 +5,7 @@ import {
   Card,
   Divider,
   Form,
+  Grid,
   List,
   Modal,
   Select,
@@ -16,6 +17,7 @@ import {
   message,
 } from 'antd';
 import {
+  ArrowLeftOutlined,
   FileExcelOutlined,
   FileImageOutlined,
   FilePdfOutlined,
@@ -182,6 +184,8 @@ function normalizeAttachmentPayloadRows(attachments) {
 export default function MessageDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const currentUserId = getCurrentUserId();
   const [replyForm] = Form.useForm();
   const [forwardForm] = Form.useForm();
@@ -420,12 +424,14 @@ export default function MessageDetailPage() {
   }
 
   return (
-    <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Button onClick={() => navigate('/inbox')}>Quay lại hộp thư</Button>
-
-      <Space>
+    <Space direction="vertical" size={isMobile ? 'middle' : 'large'} style={{ width: '100%' }} className="message-detail-page">
+      <Space wrap size={isMobile ? 'small' : 'middle'}>
+        <Button icon={<ArrowLeftOutlined />} size={isMobile ? 'small' : 'middle'} onClick={() => navigate('/inbox')}>
+          {isMobile ? 'Quay lại' : 'Quay lại hộp thư'}
+        </Button>
         <Button
           type="primary"
+          size={isMobile ? 'small' : 'middle'}
           onClick={() => {
             replyForm.setFieldsValue({
               subject: `Phản hồi: ${messageDetail.subject || ''}`,
@@ -438,6 +444,7 @@ export default function MessageDetailPage() {
           Phản hồi
         </Button>
         <Button
+          size={isMobile ? 'small' : 'middle'}
           onClick={() => {
             forwardForm.setFieldsValue({
               subject: `Chuyển tiếp: ${messageDetail.subject || ''}`,
@@ -543,6 +550,9 @@ export default function MessageDetailPage() {
         onCancel={() => setReplyModalOpen(false)}
         onOk={handleReply}
         destroyOnHidden
+        width={isMobile ? '100%' : undefined}
+        className={isMobile ? 'erp-modal-mobile' : ''}
+        style={isMobile ? { top: 0, maxWidth: '100vw', margin: 0, paddingBottom: 0 } : undefined}
       >
         <Form form={replyForm} layout="vertical">
           <Form.Item
@@ -591,6 +601,9 @@ export default function MessageDetailPage() {
         onCancel={() => setForwardModalOpen(false)}
         onOk={handleForward}
         destroyOnHidden
+        width={isMobile ? '100%' : undefined}
+        className={isMobile ? 'erp-modal-mobile' : ''}
+        style={isMobile ? { top: 0, maxWidth: '100vw', margin: 0, paddingBottom: 0 } : undefined}
       >
         <Form form={forwardForm} layout="vertical">
           <Form.Item label="Chọn người nhận" name="user_ids">

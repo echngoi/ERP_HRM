@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Card, Row, Col, Statistic, Typography, Space, Tag, Spin, Alert, Button
+  Card, Row, Col, Grid, Statistic, Typography, Space, Tag, Spin, Alert, Button
 } from 'antd';
 import {
   UserOutlined, CheckCircleOutlined, CalendarOutlined,
@@ -18,6 +18,8 @@ const { Title, Text } = Typography;
 const COLORS = ['#1677ff', '#52c41a', '#faad14', '#f5222d', '#722ed1', '#13c2c2', '#fa541c'];
 
 export default function AttendanceDashboard() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [stats, setStats]         = useState(null);
   const [device, setDevice]       = useState(null);
   const [loading, setLoading]     = useState(true);
@@ -65,29 +67,32 @@ export default function AttendanceDashboard() {
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Row justify="space-between" align="middle">
-        <Col>
-          <Title level={3} style={{ margin: 0 }}>Tổng quan chấm công</Title>
-          <Text type="secondary">
-            Cập nhật lần cuối: {stats?.last_sync || 'Chưa đồng bộ'}
-          </Text>
+      <Row justify="space-between" align="middle" gutter={[8, 8]}>
+        <Col xs={24} md={12}>
+          <Title level={isMobile ? 5 : 3} style={{ margin: 0 }}>Tổng quan chấm công</Title>
+          {!isMobile && (
+            <Text type="secondary">
+              Cập nhật lần cuối: {stats?.last_sync || 'Chưa đồng bộ'}
+            </Text>
+          )}
         </Col>
-        <Col>
-          <Space>
+        <Col xs={24} md={12} style={{ textAlign: isMobile ? 'left' : 'right' }}>
+          <Space wrap size={8}>
             <Tag
               icon={isOnline ? <CheckCircleOutlined /> : <ClockCircleOutlined />}
               color={isOnline ? 'success' : isWaiting ? 'warning' : 'error'}
-              style={{ fontSize: 13, padding: '4px 12px' }}
+              style={{ fontSize: isMobile ? 11 : 13, padding: isMobile ? '2px 8px' : '4px 12px' }}
             >
-              Thiết bị: {isOnline ? 'Online' : isWaiting ? 'Chờ kết nối' : 'Offline'}
+              {isOnline ? 'Online' : isWaiting ? 'Chờ kết nối' : 'Offline'}
             </Tag>
             <Button
               type="primary"
+              size={isMobile ? 'small' : 'middle'}
               icon={<SyncOutlined spin={syncing} />}
               onClick={handleQuickSync}
               loading={syncing}
             >
-              Đồng bộ nhanh
+              Đồng bộ
             </Button>
           </Space>
         </Col>
