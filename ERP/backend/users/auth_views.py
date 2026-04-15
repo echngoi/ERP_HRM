@@ -64,7 +64,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         profile = getattr(user, "employee_profile", None)
         if profile and profile.avatar:
-            avatar_url = request.build_absolute_uri(profile.avatar.url) if request else profile.avatar.url
+            avatar_url = profile.avatar.url
         else:
             avatar_url = None
 

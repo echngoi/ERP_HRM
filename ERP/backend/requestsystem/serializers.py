@@ -97,11 +97,8 @@ class RequestAttachmentSerializer(TimestampedModelSerializer):
         ]
 
     def get_file_url(self, obj):
-        request = self.context.get("request")
         if not obj.file:
             return ""
-        if request is not None:
-            return request.build_absolute_uri(obj.file.url)
         return obj.file.url
 
 

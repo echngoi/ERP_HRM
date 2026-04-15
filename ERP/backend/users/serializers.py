@@ -61,9 +61,6 @@ class UserSerializer(TimestampedModelSerializer):
     def get_avatar_url(self, obj):
         profile = getattr(obj, "employee_profile", None)
         if profile and profile.avatar:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(profile.avatar.url)
             return profile.avatar.url
         return None
 
@@ -128,8 +125,5 @@ class UserLookupSerializer(serializers.ModelSerializer):
     def get_avatar_url(self, obj):
         profile = getattr(obj, "employee_profile", None)
         if profile and profile.avatar:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(profile.avatar.url)
             return profile.avatar.url
         return None

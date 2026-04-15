@@ -55,9 +55,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
     def get_avatar_url(self, obj):
         if obj.avatar:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.avatar.url)
             return obj.avatar.url
         return None
 
@@ -140,9 +137,6 @@ class EmployeeUpdateRequestSerializer(serializers.ModelSerializer):
     def get_requested_by_avatar_url(self, obj):
         profile = getattr(obj.requested_by, "employee_profile", None)
         if profile and profile.avatar:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(profile.avatar.url)
             return profile.avatar.url
         return None
 
@@ -153,9 +147,6 @@ class EmployeeUpdateRequestSerializer(serializers.ModelSerializer):
 
     def get_avatar_upload_url(self, obj):
         if obj.avatar_upload:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.avatar_upload.url)
             return obj.avatar_upload.url
         return None
 
@@ -244,9 +235,6 @@ class RewardSerializer(serializers.ModelSerializer):
 
     def get_employee_avatar_url(self, obj):
         if obj.employee and obj.employee.avatar:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.employee.avatar.url)
             return obj.employee.avatar.url
         return None
 
@@ -291,8 +279,5 @@ class BirthdayEmployeeSerializer(serializers.ModelSerializer):
 
     def get_avatar_url(self, obj):
         if obj.avatar:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.avatar.url)
             return obj.avatar.url
         return None

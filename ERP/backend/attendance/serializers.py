@@ -65,9 +65,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
         if linked:
             profile = getattr(linked, 'employee_profile', None)
             if profile and profile.avatar:
-                request = self.context.get('request')
-                if request:
-                    return request.build_absolute_uri(profile.avatar.url)
                 return profile.avatar.url
         return None
 

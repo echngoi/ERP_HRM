@@ -1,0 +1,73 @@
+====================================================
+HƯỚNG DẪN THAY LOGO - ERP HRM
+====================================================
+
+CÓ 2 CÁCH THAY LOGO:
+
+====================================================
+CÁCH 1: QUA GIAO DIỆN ADMIN (KHUYẾN NGHỊ)
+====================================================
+
+1. Đăng nhập tài khoản admin
+2. Vào: Quản trị → Logo doanh nghiệp (/admin/logo-config)
+3. Upload file logo:
+   - "Logo trang đăng nhập": Hiển thị trên trang Login + sidebar
+   - "Logo tab trình duyệt (Favicon)": Icon trên tab trình duyệt
+4. Định dạng hỗ trợ: PNG, JPEG, SVG, WebP, ICO
+5. Kích thước tối đa: 2MB
+6. Khuyến nghị:
+   - Favicon: 32x32 hoặc 64x64 px, định dạng PNG/ICO/SVG
+   - Login logo: 200-400px chiều rộng, nền trong (PNG/SVG)
+
+====================================================
+CÁCH 2: THAY TRỰC TIẾP TRONG CODE (CHO DEV)
+====================================================
+
+A) THAY FAVICON (icon tab trình duyệt):
+-----------------------------------------
+- File mặc định: frontend/public/favicon.svg
+- Thay file này bằng file mới (giữ tên favicon.svg)
+- Hoặc đổi tên file + cập nhật frontend/index.html:
+    <link rel="icon" href="/ten-file-moi.png" />
+
+  Lưu ý: Nếu admin đã upload favicon qua trang Logo config,
+  favicon từ DB sẽ ghi đè file mặc định (xử lý trong App.jsx).
+
+B) THAY LOGIN LOGO:
+-----------------------------------------
+- File: frontend/src/pages/Auth/LoginPage.jsx
+- Logo được load từ API /api/site-config/ (key: login_logo)
+- Nếu muốn dùng ảnh tĩnh thay vì từ DB:
+  1. Đặt file logo vào: frontend/public/logo.png
+  2. Sửa LoginPage.jsx, thay:
+       const [logoUrl, setLogoUrl] = useState(null);
+     thành:
+       const [logoUrl, setLogoUrl] = useState('/logo.png');
+
+C) SAU KHI THAY XONG:
+-----------------------------------------
+  cd frontend
+  npm run build
+
+  # Docker prod:
+  git push
+  docker compose up -d --build frontend
+
+====================================================
+CẤU TRÚC LƯU TRỮ LOGO
+====================================================
+
+- Logo upload qua admin được lưu tại:
+    backend/media/site/login_logo.<ext>
+    backend/media/site/favicon.<ext>
+
+- Trong Docker, thư mục media được mount qua volume:
+    media_files → /app/media (backend + frontend container)
+
+- Nginx serve file media tại:
+    /media/ → /app/media/
+
+- API trả về URL tương đối: /media/site/favicon.png
+  Browser tự resolve theo domain hiện tại.
+
+====================================================
