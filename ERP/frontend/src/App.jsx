@@ -115,7 +115,10 @@ function App() {
         if (favicon?.image_url) {
           const link = document.querySelector("link[rel~='icon']");
           if (link) {
-            link.href = favicon.image_url;
+            // Cache-bust & fix type cho mọi định dạng ảnh
+            const bust = favicon.updated_at ? `?v=${Date.parse(favicon.updated_at)}` : `?v=${Date.now()}`;
+            link.href = favicon.image_url + bust;
+            link.removeAttribute('type');
           }
         }
       })

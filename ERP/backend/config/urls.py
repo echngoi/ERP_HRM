@@ -24,7 +24,7 @@ from attendance.adms_views import (
 )
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path('djadmin/', admin.site.urls),
     path('api/', include('users.urls')),
     path('api/', include('departments.urls')),
     path('api/', include('rbac.urls')),
