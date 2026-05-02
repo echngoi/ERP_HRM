@@ -1298,6 +1298,80 @@ body {
 .compose-attachment-icon--text { color: #475569; }
 .compose-attachment-icon--unknown { color: #64748b; }
 
+/* ===== Notification Dropdown / Drawer ===== */
+.notif-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  gap: 8px;
+}
+
+.notif-item {
+  padding: 10px 14px !important;
+  cursor: pointer !important;
+  background: #fff;
+  border-left: 3px solid transparent !important;
+  transition: background 0.15s;
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 10px;
+}
+.notif-item:active {
+  background: #f0f7ff;
+}
+.notif-item--unread {
+  background: #f8fbff !important;
+  border-left-color: #2563eb !important;
+}
+.notif-item__icon {
+  margin-top: 2px;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.notif-item__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.notif-item__content {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.notif-item__text {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+/* Drawer (mobile) */
+.notif-drawer .ant-drawer-content-wrapper {
+  border-radius: 0 0 20px 20px;
+}
+.notif-drawer .ant-drawer-content {
+  border-radius: 0 0 20px 20px;
+}
+.notif-drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 12px;
+}
+
+@media (max-width: 767px) {
+  .erp-notification-overlay {
+    width: calc(100vw - 24px) !important;
+    max-height: 70vh !important;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
 .compose-attachment-chip__meta {
   min-width: 0;
   flex: 1;

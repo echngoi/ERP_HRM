@@ -222,37 +222,37 @@ export default function LiveMonitor() {
       {error && <Alert type="error" message={error} showIcon closable />}
 
       {/* Stats */}
-      <Row gutter={[16, 16]}>
-        <Col xs={24} sm={8}>
-          <Card bordered={false} style={{ background: 'linear-gradient(135deg,#e6f7ff,#bae7ff)', border: '1px solid #91d5ff' }}>
+      <Row gutter={[12, 12]}>
+        <Col xs={8} sm={8}>
+          <Card bordered={false} size={isMobile ? 'small' : 'default'} style={{ background: 'linear-gradient(135deg,#e6f7ff,#bae7ff)', border: '1px solid #91d5ff' }}>
             <Statistic
-              title="Tổng bản ghi trên máy"
+              title={<span style={{ fontSize: isMobile ? 11 : 14 }}>Tổng bản ghi</span>}
               value={total}
               prefix={<CheckCircleOutlined style={{ color: '#1677ff' }} />}
-              valueStyle={{ color: '#1677ff', fontWeight: 700 }}
+              valueStyle={{ color: '#1677ff', fontWeight: 700, fontSize: isMobile ? 20 : 28 }}
             />
           </Card>
         </Col>
-        <Col xs={24} sm={8}>
-          <Card bordered={false} style={{ background: 'linear-gradient(135deg,#f6ffed,#d9f7be)', border: '1px solid #b7eb8f' }}>
+        <Col xs={8} sm={8}>
+          <Card bordered={false} size={isMobile ? 'small' : 'default'} style={{ background: 'linear-gradient(135deg,#f6ffed,#d9f7be)', border: '1px solid #b7eb8f' }}>
             <Statistic
-              title="Bản ghi mới nhất"
+              title={<span style={{ fontSize: isMobile ? 11 : 14 }}>Gần nhất</span>}
               value={records[0]?.timestamp ? dayjs(records[0].timestamp).format('HH:mm DD/MM') : '—'}
               prefix={<ClockCircleOutlined style={{ color: '#52c41a' }} />}
-              valueStyle={{ color: '#52c41a', fontWeight: 700, fontSize: 20 }}
+              valueStyle={{ color: '#52c41a', fontWeight: 700, fontSize: isMobile ? 13 : 20 }}
             />
           </Card>
         </Col>
-        <Col xs={24} sm={8}>
-          <Card bordered={false} style={{ background: 'linear-gradient(135deg,#fff7e6,#ffe7ba)', border: '1px solid #ffd591' }}>
+        <Col xs={8} sm={8}>
+          <Card bordered={false} size={isMobile ? 'small' : 'default'} style={{ background: connected ? 'linear-gradient(135deg,#fff7e6,#ffe7ba)' : 'linear-gradient(135deg,#f5f5f5,#e8e8e8)', border: connected ? '1px solid #ffd591' : '1px solid #d9d9d9' }}>
             <Statistic
-              title="Trạng thái kết nối"
-              value={connected ? 'Đang theo dõi' : 'Chưa kết nối'}
+              title={<span style={{ fontSize: isMobile ? 11 : 14 }}>Kết nối</span>}
+              value={connected ? 'Theo dõi' : 'Ngắt'}
               prefix={connected
                 ? <WifiOutlined style={{ color: '#fa8c16' }} />
                 : <DisconnectOutlined style={{ color: '#999' }} />
               }
-              valueStyle={{ color: connected ? '#fa8c16' : '#999', fontWeight: 700, fontSize: 18 }}
+              valueStyle={{ color: connected ? '#fa8c16' : '#999', fontWeight: 700, fontSize: isMobile ? 13 : 18 }}
             />
           </Card>
         </Col>
@@ -264,27 +264,52 @@ export default function LiveMonitor() {
           <Card
             title={<Space><ThunderboltOutlined /><span>Bản ghi chấm công gần nhất</span></Space>}
             bordered={false}
+            styles={{ body: { padding: isMobile ? '0 0 8px' : undefined } }}
           >
             {records.length === 0
-              ? <Text type="secondary">Chưa có dữ liệu. {connected ? 'Đang chờ cập nhật...' : 'Hãy kết nối để bắt đầu theo dõi.'}</Text>
+              ? <Text type="secondary" style={{ display: 'block', padding: isMobile ? '12px 16px' : 0 }}>
+                  Chưa có dữ liệu. {connected ? 'Đang chờ cập nhật...' : 'Hãy kết nối để bắt đầu theo dõi.'}
+                </Text>
               : (
                 <List
                   dataSource={records}
                   renderItem={r => (
-                    <List.Item key={`${r.user_id}-${r.timestamp}`}>
-                      <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                        <Space>
-                          <Text strong style={{ fontSize: 16 }}>
-                            {r.employee_name || `ID: ${r.user_id}`}
-                          </Text>
-                          <Text type="secondary" style={{ fontSize: 12 }}>({r.user_id})</Text>
-                          {r.department && <Tag>{r.department}</Tag>}
-                          <Tag color={PUNCH_COLORS[r.punch] || 'default'}>
-                            {PUNCH_LABELS[r.punch] || r.punch_type}
-                          </Tag>
+                    <List.Item
+                      key={`${r.user_id}-${r.timestamp}`}
+                      style={{ padding: isMobile ? '10px 16px' : '10px 0' }}
+                    >
+                      {isMobile ? (
+                        <div style={{ width: '100%' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, gap: 8 }}>
+                            <Text strong style={{ fontSize: 14, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {r.employee_name || `ID: ${r.user_id}`}
+                            </Text>
+                            <Text type="secondary" style={{ fontSize: 11, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                              {dayjs(r.timestamp).isValid() ? dayjs(r.timestamp).format('HH:mm DD/MM') : r.timestamp}
+                            </Text>
+                          </div>
+                          <Space size={4} wrap={false}>
+                            {r.department && <Tag style={{ margin: 0, fontSize: 11 }}>{r.department}</Tag>}
+                            <Tag color={PUNCH_COLORS[r.punch] ?? 'default'} style={{ margin: 0, fontSize: 11 }}>
+                              {PUNCH_LABELS[r.punch] || r.punch_type}
+                            </Tag>
+                          </Space>
+                        </div>
+                      ) : (
+                        <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                          <Space>
+                            <Text strong style={{ fontSize: 16 }}>
+                              {r.employee_name || `ID: ${r.user_id}`}
+                            </Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>({r.user_id})</Text>
+                            {r.department && <Tag>{r.department}</Tag>}
+                            <Tag color={PUNCH_COLORS[r.punch] ?? 'default'}>
+                              {PUNCH_LABELS[r.punch] || r.punch_type}
+                            </Tag>
+                          </Space>
+                          <Text type="secondary">{r.timestamp}</Text>
                         </Space>
-                        <Text type="secondary">{r.timestamp}</Text>
-                      </Space>
+                      )}
                     </List.Item>
                   )}
                 />
@@ -298,7 +323,7 @@ export default function LiveMonitor() {
           <Card
             title="Nhật ký hoạt động"
             bordered={false}
-            style={{ maxHeight: 400, overflow: 'auto' }}
+            style={{ maxHeight: isMobile ? 260 : 400, overflow: 'auto' }}
           >
             <Timeline
               items={log.map(l => ({
