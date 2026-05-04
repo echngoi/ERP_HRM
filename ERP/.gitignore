@@ -54,3 +54,12 @@ npm-debug.log*
 # --- Backup ---
 backups/
 *.sql
+# Agent / Claude Code
+skills-lock.json
+docs/plans/
+docs/brainstorms/
+.claude/
+CLAUDE.local.md
+.aider*
+.cursor/
+.windsurf/

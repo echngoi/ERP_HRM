@@ -1,17 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import {
   Card, DatePicker, Select, Button, Row, Col, Typography, message,
   Space, Tooltip, Spin, Tag, Statistic, Empty, Alert, Tabs, Table, Grid, Dropdown,
 } from 'antd';
 import {
   CalendarOutlined, SearchOutlined, CheckCircleOutlined,
-  CloseCircleOutlined, UserOutlined, PrinterOutlined,
+  UserOutlined, PrinterOutlined,
   WarningOutlined, DollarOutlined, FileExcelOutlined, MoreOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { getAttendanceReport, getEmployees, getMyAttendanceInfo, exportAttendanceReport, getLeaveRequests, getOvertimeRequests, getOffsiteRequests } from '../../services/attendanceApi';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 /* ── helpers ─────────────────────────────────────────── */
 const DAY_LABELS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
@@ -85,6 +85,8 @@ function calcStandardDays(days) {
 export default function MonthlyAttendance() {
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
+  const theadRef = useRef(null);
+  const [headerTops, setHeaderTops] = useState([0, 0, 0]);
   const [month, setMonth]             = useState(dayjs().startOf('month'));
   const [employees, setEmployees]     = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -97,6 +99,19 @@ export default function MonthlyAttendance() {
   const [offsiteMap, setOffsiteMap]   = useState({});
 
   const canViewAll = attInfo?.view_all_pages?.includes('monthly');
+
+  useLayoutEffect(() => {
+    const thead = theadRef.current;
+    if (!thead) return;
+    const rows = thead.querySelectorAll('tr');
+    let top = 0;
+    const tops = [];
+    for (const row of rows) {
+      tops.push(top);
+      top += row.getBoundingClientRect().height;
+    }
+    setHeaderTops(tops);
+  }, [reportData, isMobile]);
 
   useEffect(() => {
     getMyAttendanceInfo().then(r => setAttInfo(r.data)).catch(() => {});
@@ -170,7 +185,6 @@ export default function MonthlyAttendance() {
 
   /* aggregate stats */
   const totalPresent = empList.reduce((s, e) => s + e.summary.present, 0);
-  const totalAbsent  = empList.reduce((s, e) => s + e.summary.absent, 0);
   const totalLate    = empList.reduce((s, e) => s + e.summary.late, 0);
 
   const handlePrint = () => window.print();
@@ -212,16 +226,20 @@ export default function MonthlyAttendance() {
           .monthly-print { position: absolute; left: 0; top: 0; width: 100%; }
           .no-print { display: none !important; }
         }
-        .att-table { border-collapse: collapse; width: 100%; font-size: 12px; }
-        .att-table th, .att-table td { border: 1px solid #e8e8e8; text-align: center; padding: 0; }
-        .att-table th { background: #fafafa; font-weight: 600; position: sticky; top: 0; z-index: 2; }
+        .att-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 12px; }
+        .att-table th, .att-table td { border-right: 1px solid #e8e8e8; border-bottom: 1px solid #e8e8e8; text-align: center; padding: 0; }
+        .att-table th:first-child, .att-table td:first-child { border-left: 1px solid #e8e8e8; }
+        .att-table thead tr:first-child th { border-top: 1px solid #e8e8e8; }
+        .att-table th { background: #fafafa; font-weight: 600; position: sticky; z-index: 2; }
+        .att-table th.legend-header { text-align: left; padding: 8px 12px; background: #fff; z-index: 4; }
+        .att-table thead tr:last-child th { box-shadow: 0 2px 4px -2px rgba(0,0,0,0.15); }
         .att-table th.day-header { width: 44px; min-width: 44px; padding: 4px 0; font-size: 11px; }
         .att-table th.day-header.weekend { background: #fff1f0; color: #ff4d4f; }
         .att-table td.name-cell { text-align: left; padding: 4px 8px; white-space: nowrap; font-weight: 500;
           position: sticky; left: 0; background: #fff; z-index: 1; min-width: 160px; }
         .att-table td.stt-cell { padding: 4px 6px; position: sticky; left: 0; background: #fff; z-index: 1; width: 40px; }
-        .att-table th.name-header { text-align: left; padding: 4px 8px; position: sticky; left: 0; background: #fafafa; z-index: 3; min-width: 160px; }
-        .att-table th.stt-header { position: sticky; left: 0; background: #fafafa; z-index: 3; width: 40px; }
+        .att-table th.name-header { text-align: left; padding: 4px 8px; position: sticky; left: 0; background: #fafafa; z-index: 5; min-width: 160px; }
+        .att-table th.stt-header { position: sticky; left: 0; background: #fafafa; z-index: 5; width: 40px; }
         .att-table td.day-cell { padding: 2px; vertical-align: top; height: 52px; width: 44px; cursor: default; }
         .att-table td.day-cell.multi-punch { height: 68px; }
         .att-table td.day-cell.weekend { background: #fffbe6; }
@@ -242,59 +260,47 @@ export default function MonthlyAttendance() {
         .att-table tr:hover td.stt-cell { background: #e6f7ff !important; }
       `}</style>
 
-      {!isMobile && (
-        <Title level={4} style={{ marginBottom: 16 }}>
-          <CalendarOutlined /> Bảng chấm công tháng
-        </Title>
-      )}
-
       {/* ── No mapping alert ── */}
       {attInfo && !canViewAll && !attInfo.attendance_employee_id && (
         <Alert
           type="warning"
           showIcon
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: 12 }}
           message="Tài khoản của bạn chưa được liên kết với nhân viên chấm công. Hãy liên hệ quản trị viên."
         />
       )}
 
-      {/* ── Filters ── */}
-      <Card size="small" style={{ marginBottom: isMobile ? 8 : 16 }} className="no-print att-filter-card">
-        <Row gutter={[isMobile ? 8 : 16, isMobile ? 8 : 12]} align="middle">
-          <Col xs={24} sm="auto">
-            {!isMobile && <Text type="secondary" style={{ marginRight: 8 }}>Tháng:</Text>}
-            <DatePicker
-              picker="month"
-              value={month}
-              onChange={v => v && setMonth(v.startOf('month'))}
-              format="MM/YYYY"
-              allowClear={false}
-              style={isMobile ? { width: '100%' } : undefined}
-              size={isMobile ? 'middle' : undefined}
-            />
-          </Col>
-          {canViewAll && (
-            <Col xs={24} sm="auto">
-              {!isMobile && <Text type="secondary" style={{ marginRight: 8 }}>Nhân viên:</Text>}
-              <Select
-                allowClear
-                placeholder="Tất cả nhân viên"
-                style={{ width: isMobile ? '100%' : 240 }}
-                value={selectedUser}
-                onChange={setSelectedUser}
-                showSearch
-                optionFilterProp="label"
-                size={isMobile ? 'middle' : undefined}
-                options={employees.map(e => ({ value: e.user_id, label: `${e.user_id} - ${e.display_name}` }))}
+      {/* ── Header: filters + stats in one compact bar (desktop) ── */}
+      {isMobile ? (
+        <div className="no-print" style={{ marginBottom: 8 }}>
+          <Row gutter={[8, 8]}>
+            <Col span={24}>
+              <DatePicker
+                picker="month"
+                value={month}
+                onChange={v => v && setMonth(v.startOf('month'))}
+                format="MM/YYYY"
+                allowClear={false}
+                style={{ width: '100%' }}
               />
             </Col>
-          )}
-          <Col xs={24} sm="auto">
-            {isMobile ? (
-              <Space style={{ width: '100%' }}>
-                <Button type="primary" icon={<SearchOutlined />} onClick={fetchReport} loading={loading}>
-                  Xem
-                </Button>
+            {canViewAll && (
+              <Col span={24}>
+                <Select
+                  allowClear
+                  placeholder="Tất cả nhân viên"
+                  style={{ width: '100%' }}
+                  value={selectedUser}
+                  onChange={setSelectedUser}
+                  showSearch
+                  optionFilterProp="label"
+                  options={employees.map(e => ({ value: e.user_id, label: `${e.user_id} - ${e.display_name}` }))}
+                />
+              </Col>
+            )}
+            <Col span={24}>
+              <Space>
+                <Button type="primary" icon={<SearchOutlined />} onClick={fetchReport} loading={loading}>Xem</Button>
                 <Dropdown menu={{ items: [
                   { key: 'print', icon: <PrinterOutlined />, label: 'In', onClick: handlePrint },
                   ...(canViewAll ? [{ key: 'export', icon: <FileExcelOutlined />, label: 'Xuất Excel', onClick: handleExport }] : []),
@@ -302,53 +308,63 @@ export default function MonthlyAttendance() {
                   <Button icon={<MoreOutlined />} loading={exporting} />
                 </Dropdown>
               </Space>
-            ) : (
-              <Space>
-                <Button type="primary" icon={<SearchOutlined />} onClick={fetchReport} loading={loading}>
-                  Xem
-                </Button>
-                <Button icon={<PrinterOutlined />} onClick={handlePrint}>
-                  In
-                </Button>
+            </Col>
+          </Row>
+          {reportData && (
+            <Row gutter={8} style={{ marginTop: 8 }}>
+              <Col span={12}>
+                <Card size="small"><Statistic title="Nhân viên" value={empList.length} prefix={<UserOutlined />} /></Card>
+              </Col>
+              <Col span={12}>
+                <Card size="small"><Statistic title="Đi làm" value={totalPresent} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} /></Card>
+              </Col>
+            </Row>
+          )}
+        </div>
+      ) : (
+        <div className="no-print" style={{ marginBottom: 12 }}>
+          <Row align="middle" justify="space-between" wrap={false}>
+            <Col flex="auto">
+              <Space size="middle" wrap>
+                <DatePicker
+                  picker="month"
+                  value={month}
+                  onChange={v => v && setMonth(v.startOf('month'))}
+                  format="MM/YYYY"
+                  allowClear={false}
+                  size="middle"
+                />
+                {canViewAll && (
+                  <Select
+                    allowClear
+                    placeholder="Tất cả nhân viên"
+                    style={{ width: 220 }}
+                    value={selectedUser}
+                    onChange={setSelectedUser}
+                    showSearch
+                    optionFilterProp="label"
+                    options={employees.map(e => ({ value: e.user_id, label: `${e.user_id} - ${e.display_name}` }))}
+                  />
+                )}
+                <Button type="primary" icon={<SearchOutlined />} onClick={fetchReport} loading={loading}>Xem</Button>
+                <Button icon={<PrinterOutlined />} onClick={handlePrint}>In</Button>
                 {canViewAll && (
                   <Button icon={<FileExcelOutlined />} onClick={handleExport} loading={exporting}
-                    style={{ color: '#217346', borderColor: '#217346' }}>
-                    Xuất Excel
-                  </Button>
+                    style={{ color: '#217346', borderColor: '#217346' }}>Xuất Excel</Button>
                 )}
               </Space>
+            </Col>
+            {reportData && (
+              <Col flex="none">
+                <Space size="large">
+                  <Statistic title="Nhân viên" value={empList.length} prefix={<UserOutlined />} style={{ minWidth: 80 }} />
+                  <Statistic title="Đi làm" value={totalPresent} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} style={{ minWidth: 80 }} />
+                  <Statistic title="Đi muộn" value={totalLate} valueStyle={{ color: '#fa8c16' }} style={{ minWidth: 80 }} />
+                </Space>
+              </Col>
             )}
-          </Col>
-        </Row>
-      </Card>
-
-      {/* ── Stats ── */}
-      {reportData && (
-        <Row gutter={isMobile ? 8 : 16} style={{ marginBottom: isMobile ? 8 : 16 }} className="no-print att-stats-row">
-          <Col xs={12} md={4}>
-            <Card size="small" className="att-stat-card">
-              <Statistic title="Nhân viên" value={empList.length} prefix={<UserOutlined />} />
-            </Card>
-          </Col>
-          <Col xs={12} md={4}>
-            <Card size="small" className="att-stat-card">
-              <Statistic title="Đi làm" value={totalPresent}
-                valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} />
-            </Card>
-          </Col>
-          <Col xs={12} md={4}>
-            <Card size="small" className="att-stat-card">
-              <Statistic title="Vắng" value={totalAbsent}
-                valueStyle={{ color: '#ff4d4f' }} prefix={<CloseCircleOutlined />} />
-            </Card>
-          </Col>
-          <Col xs={12} md={4}>
-            <Card size="small" className="att-stat-card">
-              <Statistic title="Đi muộn" value={totalLate}
-                valueStyle={{ color: '#fa8c16' }} />
-            </Card>
-          </Col>
-        </Row>
+          </Row>
+        </div>
       )}
 
       {/* ── Tabs: Bảng chấm công + Đi muộn về sớm ── */}
@@ -359,45 +375,59 @@ export default function MonthlyAttendance() {
           children: (
             <Card
               size="small"
-              title={isMobile ? null : (
-                <Space wrap>
-                  <CalendarOutlined />
-                  <span>Bảng chấm công tháng {month.format('MM/YYYY')}</span>
-                  <Tag color="green"><span className="cell-badge green" /> Đi làm</Tag>
-                  <Tag color="red"><span className="cell-badge red" /> Vắng</Tag>
-                  <Tag color="orange"><span className="cell-badge orange" /> Đi muộn</Tag>
-                  <Tag color="blue"><span className="cell-badge" style={{ background: '#1677ff', display: 'inline-block', width: 8, height: 8, borderRadius: '50%' }} /> Nghỉ phép (CL)</Tag>
-                  <Tag color="orange"><span className="cell-badge" style={{ background: '#d46b08', display: 'inline-block', width: 8, height: 8, borderRadius: '50%' }} /> Nghỉ phép (KL)</Tag>
-                  <Tag color="purple"><span className="cell-badge" style={{ background: '#722ed1', display: 'inline-block', width: 8, height: 8, borderRadius: '50%' }} /> Ngoại viện</Tag>
-                </Space>
-              )}
-              styles={{ body: { padding: 0, overflow: 'auto' } }}
+              styles={{ body: { padding: 0 } }}
             >
               <Spin spinning={loading}>
                 {empList.length === 0 && !loading ? (
                   <Empty description="Không có dữ liệu" style={{ padding: 40 }} />
                 ) : (
-                  <div className="monthly-print" style={{ overflowX: 'auto' }}>
+                  <div className="monthly-print" style={{ overflow: 'auto', maxHeight: 'calc(100vh - 260px)' }}>
                     <table className="att-table">
-                      <thead>
-                        <tr>
-                          <th className="stt-header" rowSpan={2}>STT</th>
-                          <th className="name-header" rowSpan={2}>Họ tên</th>
-                          {days.map(d => (
-                            <th key={d.day} className={`day-header${d.isWeekend ? ' weekend' : ''}`}>
-                              {DAY_LABELS[d.dow]}
+                      <thead ref={theadRef}>
+                        {!isMobile && (
+                          <tr>
+                            <th colSpan={days.length + 4} className="legend-header" style={{ top: headerTops[0] || 0 }}>
+                              <Space wrap>
+                                <CalendarOutlined />
+                                <span>Bảng chấm công tháng {month.format('MM/YYYY')}</span>
+                                <Tag color="green"><span className="cell-badge green" /> Đi làm</Tag>
+                                <Tag color="red"><span className="cell-badge red" /> Vắng</Tag>
+                                <Tag color="orange"><span className="cell-badge orange" /> Đi muộn</Tag>
+                                <Tag color="blue"><span className="cell-badge" style={{ background: '#1677ff', display: 'inline-block', width: 8, height: 8, borderRadius: '50%' }} /> Nghỉ phép (CL)</Tag>
+                                <Tag color="orange"><span className="cell-badge" style={{ background: '#d46b08', display: 'inline-block', width: 8, height: 8, borderRadius: '50%' }} /> Nghỉ phép (KL)</Tag>
+                                <Tag color="purple"><span className="cell-badge" style={{ background: '#722ed1', display: 'inline-block', width: 8, height: 8, borderRadius: '50%' }} /> Ngoại viện</Tag>
+                              </Space>
                             </th>
-                          ))}
-                          <th rowSpan={2} style={{ width: 55, padding: '4px 2px', fontSize: 11 }}>Công TT</th>
-                          <th rowSpan={2} style={{ width: 55, padding: '4px 2px', fontSize: 11 }}>Công chuẩn</th>
-                        </tr>
-                        <tr>
-                          {days.map(d => (
-                            <th key={d.day} className={`day-header${d.isWeekend ? ' weekend' : ''}`}>
-                              {d.day}
-                            </th>
-                          ))}
-                        </tr>
+                          </tr>
+                        )}
+                        {(() => {
+                          const dowIdx = isMobile ? 0 : 1;
+                          const dayIdx = isMobile ? 1 : 2;
+                          const dowTop = headerTops[dowIdx] || 0;
+                          const dayTop = headerTops[dayIdx] || 0;
+                          return (
+                            <>
+                              <tr>
+                                <th className="stt-header" rowSpan={2} style={{ top: dowTop }}>STT</th>
+                                <th className="name-header" rowSpan={2} style={{ top: dowTop }}>Họ tên</th>
+                                {days.map(d => (
+                                  <th key={d.day} className={`day-header${d.isWeekend ? ' weekend' : ''}`} style={{ top: dowTop }}>
+                                    {DAY_LABELS[d.dow]}
+                                  </th>
+                                ))}
+                                <th rowSpan={2} style={{ width: 55, padding: '4px 2px', fontSize: 11, top: dowTop }}>Công TT</th>
+                                <th rowSpan={2} style={{ width: 55, padding: '4px 2px', fontSize: 11, top: dowTop }}>Công chuẩn</th>
+                              </tr>
+                              <tr>
+                                {days.map(d => (
+                                  <th key={d.day} className={`day-header${d.isWeekend ? ' weekend' : ''}`} style={{ top: dayTop }}>
+                                    {d.day}
+                                  </th>
+                                ))}
+                              </tr>
+                            </>
+                          );
+                        })()}
                       </thead>
                       <tbody>
                         {empList.map((emp, idx) => {
